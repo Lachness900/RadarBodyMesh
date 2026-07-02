@@ -6,6 +6,7 @@ DEFAULT_PORT = 5005
 
 RADAR_FRAME_DIRECTORY = "radar_frames"
 RADAR_EXAMPLE_FILE = r"file1.bin"
+CLEANED_EXAMPLE_FILE = r"train.dat"
 CHUNK_SIZE = 8
 CHUNK_LIMIT = 20
 
@@ -39,6 +40,14 @@ def import_raw_data_from_desktop():
         for i in range(CHUNK_LIMIT):
             print(struct.unpack('<4h', data[CHUNK_SIZE*i:CHUNK_SIZE*(i+1)]))
 
+
+# For manually reading a data file into the server
+def import_data_from_desktop():
+    with open(CLEANED_EXAMPLE_FILE, "rb") as f:
+        data = f.read(CHUNK_SIZE*CHUNK_LIMIT)
+        for i in range(CHUNK_LIMIT):
+            print(struct.unpack('<4h', data[CHUNK_SIZE*i:CHUNK_SIZE*(i+1)]))
+
 if __name__ == "__main__":
-    import_raw_data_from_desktop()
+    import_data_from_desktop()
     #udp_radar_reciever(DEFAULT_PORT)
