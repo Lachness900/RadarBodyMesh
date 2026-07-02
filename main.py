@@ -1,5 +1,6 @@
 import socket
 import struct
+import numpy as np
 
 DEFAULT_ADDR = ""
 DEFAULT_PORT = 5005
@@ -48,6 +49,12 @@ def import_data_from_desktop():
         for i in range(CHUNK_LIMIT):
             print(struct.unpack('<4h', data[CHUNK_SIZE*i:CHUNK_SIZE*(i+1)]))
 
+
+def _read_data_packet():
+    data = np.fromfile("train.dat", dtype='<f8')
+
+    print(len(data))
+
 if __name__ == "__main__":
-    import_data_from_desktop()
+    _read_data_packet()
     #udp_radar_reciever(DEFAULT_PORT)
