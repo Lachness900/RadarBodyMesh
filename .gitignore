@@ -1,5 +1,18 @@
 # Created by venv; see https://docs.python.org/3/library/venv.html
-.venv/
 train.dat
 test.dat
 raw.bin
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
