@@ -40,7 +40,7 @@ def import_data_from_desktop(file_name: str):
     time = int(file_name.strip('abcdefghijklmnopqrstuvwxyz. _'))
     with zstd.open(file_name) as f:
         data = f.read(7)
-        duration = struct.unpack('<I',data[2:6])
+        duration = struct.unpack('<I',data[2:6])*1000
         message_type = data[6]
 
         data = f.read()
