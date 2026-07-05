@@ -40,14 +40,13 @@ def import_data_from_desktop(file_name: str):
     time = int(file_name.strip('abcdefghijklmnopqrstuvwxyz. _'))
     with zstd.open(file_name) as f:
         data = f.read(7)
-        duration = struct.unpack('>I',data[2:6])
+        duration = struct.unpack('<I',data[2:6])
         message_type = data[6]
 
         data = f.read()
     length = len(data)
     print(length)
-    data = data[:length - (length % 6)]
-    points = np.frombuffer(data, dtype=np.uint16).reshape(-1, 3) 
+    points = np.frombuffer(data[:length - (length % 6)], dtype=np.uint16).reshape(-1, 3) 
     return time, duration[0], message_type, points
 
 if __name__ == "__main__":
