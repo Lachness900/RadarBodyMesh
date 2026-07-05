@@ -1,6 +1,7 @@
 import socket
 import struct
 import numpy as np
+import zstandard as zstd
 
 DEFAULT_ADDR = ""
 DEFAULT_PORT = 5005
@@ -8,8 +9,7 @@ DEFAULT_PORT = 5005
 RADAR_FRAME_DIRECTORY = "radar_frames"
 RADAR_EXAMPLE_FILE = r"raw.bin"
 CLEANED_EXAMPLE_FILE = r"train.dat"
-CHUNK_SIZE = 8
-CHUNK_LIMIT = 20
+NEW_EXAMPLE_FILE = "cam_radar_1783260788477740516.dat"
 
 
 reciever = (DEFAULT_ADDR, DEFAULT_PORT)
@@ -34,27 +34,23 @@ def udp_radar_reciever(port: int = DEFAULT_PORT):
 
     sock.close()
 
-# For manually reading a raw data file into the server
-def import_raw_data_from_desktop():
-    with open(RADAR_EXAMPLE_FILE, "rb") as f:
-        data = f.read(CHUNK_SIZE*CHUNK_LIMIT)
-        for i in range(CHUNK_LIMIT):
-            print(struct.unpack('<4h', data[CHUNK_SIZE*i:CHUNK_SIZE*(i+1)]))
-
 
 # For manually reading a data file into the server
-def import_data_from_desktop():
-    with open(CLEANED_EXAMPLE_FILE, "rb") as f:
-        data = f.read(CHUNK_SIZE*CHUNK_LIMIT)
-        for i in range(CHUNK_LIMIT):
-            print(struct.unpack('<4h', data[CHUNK_SIZE*i:CHUNK_SIZE*(i+1)]))
+def import_data_from_desktop(file_name: str):
+    time = int(file_name.strip('abcdefghijklmnopqrstuvwxyz. _'))
+    with zstd.open(file_name) as f:
+        data = f.read(7)
+        duration = struct.unpack('>I',data[2:6])
+        message_type = data[6]
 
-
-def _read_data_packet():
-    data = np.fromfile("train.dat", dtype='<f8')
-
-    print(len(data))
+        data = f.read()
+    length = len(data)
+    print(length)
+    data = data[:length - (length % 6)]
+    points = np.frombuffer(data, dtype=np.uint16).reshape(-1, 3) 
+    return time, duration[0], message_type, points
 
 if __name__ == "__main__":
-    _read_data_packet()
-    #udp_radar_reciever(DEFAULT_PORT)
+    time, duration, mes_type, points = import_data_from_desktop(NEW_EXAMPLE_FILE)
+    print(time, duration, mes_type, points)
+    # udp_radar_reciever(DEFAULT_PORT)

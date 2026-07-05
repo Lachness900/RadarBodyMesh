@@ -2,6 +2,7 @@
 train.dat
 test.dat
 raw.bin
+cam_radar_1783260788477740516.dat
 
 # Python
 __pycache__/
