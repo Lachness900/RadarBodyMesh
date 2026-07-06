@@ -94,10 +94,16 @@ def import_data_from_desktop(file_name: Union[Path, str]):
 
         # skip footer
         cursor = footer_idx + 2
-        yield time, timestamp_us, message_type, points
+        yield time, timestamp_us, message_type, point_cloud_np
 
 
 if __name__ == "__main__":
-    time, duration, mes_type, points = import_data_from_desktop(NEW_EXAMPLE_FILE)
-    print(time, duration, mes_type, points)
+    try:
+        for time, duration, mes_type, points in import_data_from_desktop(
+            NEW_EXAMPLE_FILE
+        ):
+            print(duration, mes_type, points.shape)
+
+    except KeyboardInterrupt:
+        pass
     # udp_radar_reciever(DEFAULT_PORT)
