@@ -98,12 +98,5 @@ def import_data_from_desktop(file_name: Union[Path, str]):
 
 
 if __name__ == "__main__":
-    try:
-        for time, duration, mes_type, points in import_data_from_desktop(
-            NEW_EXAMPLE_FILE
-        ):
-            print(duration, mes_type, points.shape)
-
-    except KeyboardInterrupt:
-        pass
     # udp_radar_reciever(DEFAULT_PORT)
+    pass

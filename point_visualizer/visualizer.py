@@ -150,10 +150,10 @@ class RadarPlotter(QMainWindow):
         Updates both plots with new data.
         """
         if data1 is not None:
-            self.scatter1.setData(pos=data1[:, :3], size=5)
+            self.scatter1.setData(pos=data1[:, :3], size=3)
 
         if data2 is not None:
-            self.scatter2.setData(pos=data2[:, :3], size=2)
+            self.scatter2.setData(pos=data2[:, :3], size=3)
 
 
 class DatReader:
@@ -249,6 +249,21 @@ def parse_args() -> argparse.Namespace:
 
     return parser.parse_args()
 
+# Defines static boundaries around the movement area
+def filter_data(data: NDArray):
+    x_bound = (2, 4)
+    y_bound = (-1, 2)
+    z_bound = (-1, 1)
+
+    mask = (
+        (data[:, 0] >= x_bound[0]) & (data[:, 0] <= x_bound[1]) &
+        (data[:, 1] >= y_bound[0]) & (data[:, 1] <= y_bound[1]) &
+        (data[:, 2] >= z_bound[0]) & (data[:, 2] <= z_bound[1])
+    )
+
+    return data[mask]
+        
+
 
 def main() -> int:
     args = parse_args()
@@ -287,13 +302,48 @@ def main() -> int:
         except KeyboardInterrupt:
             exit_event.set()
             return
-        except:
-            exit_event.set()
-            return
         exit_event.set()
         return
 
-    plotter_thread = threading.Thread(target=data_plot, args=())
+    def accumulated_data_plot():
+            nonlocal dat_reader
+            nonlocal plotter
+            nonlocal exit_event
+            current_tick_us = 0
+            current_points = np.array([])
+
+            # Set number of points to accumulate
+            max_points = 100
+            try:
+                for d in dat_reader.nextFrame():
+                    msg_type = d["message_type"]
+                    msg = d["point_cloud"]
+                    new_tick_us = d["timestamp_us"]
+    
+                    if msg_type == 2:
+                        data = filter_data(msg)
+                        saved_points = len(current_points) + len(data)
+                        if saved_points >= max_points:
+                            excess = saved_points - max_points
+                            plotter.update_data(data2=np.append(current_points, data).reshape(-1, 3))
+                            current_points = [data[:excess]]
+                        else:
+                            current_points = np.append(current_points, data).reshape(-1, 3)
+                    elif msg_type == 1:
+                        plotter.update_data(data1=msg)
+    
+                    diff_tick_us = new_tick_us - current_tick_us
+                    # print(diff_tick_us / 1e6)
+                    current_tick_us = new_tick_us
+                    time.sleep(diff_tick_us / 1e6)
+            except KeyboardInterrupt:
+                exit_event.set()
+                return
+            exit_event.set()
+            return
+    
+
+    plotter_thread = threading.Thread(target=accumulated_data_plot, args=())
     plotter_thread.start()
     try:
         app.exec()
