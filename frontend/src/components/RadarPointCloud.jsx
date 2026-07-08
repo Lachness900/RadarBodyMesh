@@ -2,33 +2,126 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
+const POINT_MODES = [
+  {
+    key: "projected_radar",
+    label: "Projected",
+    description: "Filtered and flattened",
+  },
+  {
+    key: "filtered_radar",
+    label: "Filtered",
+    description: "Filtered xyz",
+  },
+  {
+    key: "raw_radar",
+    label: "Raw",
+    description: "Raw xyz",
+  },
+];
+
+// Match point_visualizer/visualizer.py: -12m..+12m with 1m tick marks.
+const AXIS_SIZE = 12;
+const AXIS_TICK_SPACING = 1;
+const RADAR_VIEW_DISTANCE = 5;
+const COORDINATE_CENTER = new THREE.Vector3(0, 0, 0);
+
 /**
- * Compute a camera target and distance from the raw xyz point cloud.
- * This is only for framing the Three.js camera; it does not alter point data.
+ * Reset to a stable radar coordinate view. The coordinate center remains the
+ * camera target, and the camera looks along the positive X direction.
  */
-function pointCloudBounds(points) {
-  if (!points?.length) {
-    return {
-      center: new THREE.Vector3(2.5, 0, 0),
-      radius: 5,
-    };
+function resetCameraToRadarView(camera, controls) {
+  camera.up.set(0, 0, 1);
+  camera.position.set(-RADAR_VIEW_DISTANCE, 0, 0);
+  camera.lookAt(COORDINATE_CENTER);
+  camera.near = 0.01;
+  camera.far = 1000;
+  camera.updateProjectionMatrix();
+  controls.target.copy(COORDINATE_CENTER);
+  controls.update();
+  controls.saveState();
+}
+
+function makeTextSprite(text, position, color = "#4b5961", size = 0.34) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.font = "700 42px Inter, Arial, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = color;
+  context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.position.copy(position);
+  sprite.scale.set(size * 2, size, 1);
+  return sprite;
+}
+
+function makeLineSegments(points, colors) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flat(), 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors.flat(), 3));
+  const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.7,
+  });
+  return new THREE.LineSegments(geometry, material);
+}
+
+function addMetricAxes(scene) {
+  const red = [0.9, 0.22, 0.22];
+  const green = [0.25, 0.72, 0.25];
+  const blue = [0.24, 0.45, 1.0];
+  const tickColor = [0.38, 0.46, 0.52];
+  const points = [
+    [-AXIS_SIZE, 0, 0],
+    [AXIS_SIZE, 0, 0],
+    [0, -AXIS_SIZE, 0],
+    [0, AXIS_SIZE, 0],
+    [0, 0, -AXIS_SIZE],
+    [0, 0, AXIS_SIZE],
+  ];
+  const colors = [red, red, green, green, blue, blue];
+  const tickLength = AXIS_SIZE * 0.03;
+
+  for (let value = -AXIS_SIZE; value <= AXIS_SIZE; value += AXIS_TICK_SPACING) {
+    if (value === 0) continue;
+    points.push([value, -tickLength, 0], [value, tickLength, 0]);
+    colors.push(tickColor, tickColor);
+    points.push([-tickLength, value, 0], [tickLength, value, 0]);
+    colors.push(tickColor, tickColor);
+    points.push([-tickLength, 0, value], [tickLength, 0, value]);
+    colors.push(tickColor, tickColor);
   }
 
-  const xs = points.map((point) => point.x).filter(Number.isFinite);
-  const ys = points.map((point) => point.y).filter(Number.isFinite);
-  const zs = points.map((point) => point.z).filter(Number.isFinite);
-  if (!xs.length || !ys.length || !zs.length) {
-    return {
-      center: new THREE.Vector3(2.5, 0, 0),
-      radius: 5,
-    };
+  scene.add(makeLineSegments(points, colors));
+  for (let value = -AXIS_SIZE; value <= AXIS_SIZE; value += AXIS_TICK_SPACING) {
+    if (value === 0) continue;
+    scene.add(
+      makeTextSprite(String(value), new THREE.Vector3(value, -tickLength * 3, 0), "#6b747c", 0.24),
+    );
+    scene.add(
+      makeTextSprite(String(value), new THREE.Vector3(-tickLength * 3, value, 0), "#6b747c", 0.24),
+    );
+    scene.add(
+      makeTextSprite(String(value), new THREE.Vector3(-tickLength * 3, 0, value), "#6b747c", 0.24),
+    );
   }
-
-  const min = new THREE.Vector3(Math.min(...xs), Math.min(...ys), Math.min(...zs));
-  const max = new THREE.Vector3(Math.max(...xs), Math.max(...ys), Math.max(...zs));
-  const center = min.clone().add(max).multiplyScalar(0.5);
-  const radius = Math.max(1, max.distanceTo(min) * 0.65);
-  return { center, radius };
+  scene.add(makeTextSprite("X (m)", new THREE.Vector3(AXIS_SIZE + 0.75, 0, 0), "#d94b4b", 0.36));
+  scene.add(makeTextSprite("Y (m)", new THREE.Vector3(0, AXIS_SIZE + 0.75, 0), "#339448", 0.36));
+  scene.add(makeTextSprite("Z (m)", new THREE.Vector3(0, 0, AXIS_SIZE + 0.75), "#3c63d8", 0.36));
 }
 
 /**
@@ -64,12 +157,12 @@ function pointsToGeometry(points) {
   return geometry;
 }
 
-export function RadarPointCloud({ points }) {
+export function RadarPointCloud({ mode, onModeChange, points, pointSets, viewKey }) {
   const mountRef = useRef(null);
   const cameraRef = useRef(null);
   const controlsRef = useRef(null);
   const cloudRef = useRef(null);
-  const userMovedCameraRef = useRef(false);
+  const fittedViewKeyRef = useRef(null);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -91,19 +184,18 @@ export function RadarPointCloud({ points }) {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.addEventListener("start", () => {
-      // Once a user rotates/zooms manually, stop auto-fitting the camera on
-      // every frame so interaction does not fight the live data stream.
-      userMovedCameraRef.current = true;
-    });
+    // Keep the radar coordinate center fixed in the middle of the view. Users
+    // can rotate/zoom, but cannot pan the target away from (0, 0, 0).
+    controls.enablePan = false;
     controlsRef.current = controls;
+    resetCameraToRadarView(camera, controls);
 
-    const grid = new THREE.GridHelper(10, 10, "#9aa5b1", "#d7dce2");
+    const grid = new THREE.GridHelper(AXIS_SIZE * 2, AXIS_SIZE * 2, "#9aa5b1", "#d7dce2");
     // Three.js GridHelper is x/z by default. Rotate it to the radar x/y ground
     // plane so z remains vertical.
     grid.rotation.x = Math.PI / 2;
     scene.add(grid);
-    scene.add(new THREE.AxesHelper(2));
+    addMetricAxes(scene);
 
     const material = new THREE.PointsMaterial({
       size: 0.06,
@@ -140,6 +232,24 @@ export function RadarPointCloud({ points }) {
       controls.dispose();
       cloud.geometry.dispose();
       material.dispose();
+      const disposeMaterial = (objectMaterial) => {
+        if (Array.isArray(objectMaterial)) {
+          objectMaterial.forEach(disposeMaterial);
+          return;
+        }
+        objectMaterial?.dispose?.();
+      };
+
+      scene.traverse((object) => {
+        if (object.isSprite) {
+          object.material.map?.dispose();
+          disposeMaterial(object.material);
+        }
+        if (object.isLineSegments) {
+          object.geometry.dispose();
+          disposeMaterial(object.material);
+        }
+      });
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -155,22 +265,61 @@ export function RadarPointCloud({ points }) {
     cloud.geometry = pointsToGeometry(points);
     oldGeometry.dispose();
 
-    if (!userMovedCameraRef.current) {
-      // Keep the first view centered on incoming data. After manual camera
-      // movement, preserve the user's chosen viewpoint.
-      const { center, radius } = pointCloudBounds(points);
-      controls.target.copy(center);
-      camera.position.set(center.x + radius * 1.3, center.y - radius * 1.7, center.z + radius);
-      camera.near = Math.max(0.01, radius / 100);
-      camera.far = Math.max(100, radius * 20);
-      camera.updateProjectionMatrix();
-      controls.update();
+    const fitKey = viewKey || mode;
+    if (fittedViewKeyRef.current !== fitKey) {
+      // File/source/mode changes return to the same radar coordinate baseline.
+      // Continuous live frames still update points only, so the camera stays stable.
+      resetCameraToRadarView(camera, controls);
+      fittedViewKeyRef.current = fitKey;
     }
-  }, [points]);
+  }, [mode, points, viewKey]);
+
+  const resetView = () => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    resetCameraToRadarView(camera, controls);
+    fittedViewKeyRef.current = viewKey || mode;
+  };
 
   return (
     <section className="panel pointcloud-panel">
-      <div className="panel-label">Radar Point Cloud</div>
+      <div className="pointcloud-header">
+        <div>
+          <div className="panel-label">Radar Point Cloud</div>
+          <div className="pointcloud-mode-note">
+            {POINT_MODES.find((option) => option.key === mode)?.description}
+          </div>
+        </div>
+        <div className="pointcloud-view-tools">
+          <button
+            className="reset-view-button"
+            onClick={resetView}
+            aria-label="Reset camera to centered radar view"
+            title="Reset camera to the centered radar view"
+            type="button"
+          >
+            Reset View
+          </button>
+        </div>
+        <div className="pointcloud-modes" aria-label="Radar point cloud display mode">
+          {POINT_MODES.map((option) => {
+            const count = pointSets?.[option.key]?.length ?? 0;
+            const isActive = mode === option.key;
+            return (
+              <button
+                className={isActive ? "active" : ""}
+                disabled={!count && option.key !== "raw_radar"}
+                key={option.key}
+                onClick={() => onModeChange(option.key)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div ref={mountRef} className="pointcloud-scene" />
     </section>
   );
