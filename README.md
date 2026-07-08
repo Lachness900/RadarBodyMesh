@@ -1,38 +1,163 @@
-# mmYoga: Privacy-Preserving mmWave Yoga Pose Matching
+# mmYoga: Privacy-Preserving mmWave Pose Matching
 
-mmYoga is a COMP6733 IoT project for visualizing and eventually classifying yoga/body poses from mmWave radar point clouds. The repository currently contains the TI radar driver, an offline Python point-cloud visualizer, recorded/local data support, and the first version of the web dashboard.
+mmYoga is a COMP6733 IoT project for displaying and eventually classifying body poses from mmWave radar point clouds. The current repository contains the TI radar driver, the team's original offline `.dat` visualizer, and a web dashboard MVP that can stream replay data through a FastAPI backend.
 
-The current milestone focuses on the frontend display layer. The dashboard can run independently: when a backend WebSocket is available, it displays backend data; when the backend is unavailable, it falls back to local mock data so the UI can still be reviewed.
+The current MVP is replay-first: it uses recorded synchronized camera/radar `.dat` files to drive the dashboard before the final yoga pose model and live radar bridge are connected.
 
-## Current Stage
+## Current Implementation
 
-Implemented in this stage:
+Implemented now:
 
-- `frontend/`: React + Vite dashboard.
-- `frontend/src/hooks/usePredictionStream.js`: owns the WebSocket connection and falls back to a local mock stream when the backend is not available.
-- `frontend/src/components/RadarPointCloud.jsx`: renders the radar point cloud in 3D with Three.js.
-- `frontend/src/components/PredictionPanel.jsx`: shows the current predicted pose.
-- `frontend/src/components/ConfidenceBars.jsx`: shows confidence values for each pose class.
-- `frontend/src/components/StatusStrip.jsx`: shows connection status, source, FPS, latency, and point count.
-- `point_visualizer/visualizer.py`: the existing PyQt/PyOpenGL offline visualizer from the team. This has not been modified by the frontend work.
+- FastAPI backend with REST and WebSocket endpoints.
+- Streaming parser for the team's Zstandard-compressed `.dat` recording format.
+- Replay mode for real radar point-cloud data.
+- Mock mode for frontend/backend smoke tests when replay data is unavailable.
+- React + Vite dashboard with:
+  - current pose panel,
+  - pose confidence bars,
+  - Three.js radar point-cloud view,
+  - replay/mock input controls,
+  - compact status strip.
 
-This stage does not merge model training, final inference, or visualizer refactoring into the main flow. The frontend prediction may still be mock data. The point-cloud view only displays the `points` received from the backend or mock stream.
+Important limitation:
 
-## Frontend Data Flow
+- Radar points in replay mode are real parsed `.dat` data.
+- Pose predictions are still produced by a deterministic mock predictor.
+- No final trained model is connected yet.
 
-By default, the frontend connects to:
+## Project Structure
 
 ```text
+RadarBodyMesh/
+  radar_driver/                 # TI mmWave ROS2 driver and messages
+  point_visualizer/
+    visualizer.py               # Original PyQt/OpenGL offline .dat visualizer
+  mm_yoga/
+    data/
+      parser.py                 # Streaming .dat parser
+      preprocess.py             # Replay filtering, feature shaping, JSON point conversion
+    model/
+      inference.py              # Predictor interface and mock predictor
+    backend/
+      app.py                    # FastAPI REST/WebSocket app
+      replay.py                 # Replay stream -> dashboard message conversion
+      schemas.py                # JSON message dataclasses
+  frontend/
+    src/                        # React dashboard source
+    package.json                # Frontend scripts and dependencies
+  OneDrive/                     # Local downloaded data, ignored by Git
+  data/replay/                  # Uploaded replay files, ignored by Git
+  models/                       # Local model artifacts, ignored by Git
+  requirements.txt              # Python dependencies
+```
+
+## Local Data
+
+The backend looks for a default replay file at:
+
+```text
+OneDrive/DepthCam_Radar_Cloud_Combined/cam_radar_1783260788477740516.dat
+```
+
+`OneDrive/` is intentionally ignored by Git because it contains large local data files. If the default replay file is missing, the backend and frontend can still run in mock mode.
+
+Uploaded `.dat` files from the dashboard are stored under:
+
+```text
+data/replay/uploads/
+```
+
+That directory is also ignored by Git.
+
+## Backend
+
+Install Python dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Start the backend on port `8000`:
+
+```bash
+uvicorn mm_yoga.backend.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+If you use the local virtual environment:
+
+```bash
+.venv/bin/uvicorn mm_yoga.backend.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Useful endpoints:
+
+```text
+GET  /health
+GET  /api/sources
+GET  /api/latest?source=replay
+POST /api/replay-files?filename=<name>.dat
+WS   /ws/predictions?source=replay&replay_file=<path>
+```
+
+Source modes:
+
+- `mock`: generated point cloud and mock prediction.
+- `replay`: parsed `.dat` radar replay and mock prediction.
+- `auto`: replay if available, otherwise mock.
+
+Environment variables:
+
+```bash
+MMYOGA_REPLAY_FILE=/path/to/file.dat
+MMYOGA_PLAYBACK_SPEED=1.0
+MMYOGA_MODEL_FILE=/path/to/model.file
+```
+
+`MMYOGA_MODEL_FILE` is reserved for a future model. At this stage, model loading is not implemented and predictions remain mock.
+
+## Frontend
+
+Install dependencies:
+
+```bash
+cd frontend
+npm install
+```
+
+Start the Vite dev server:
+
+```bash
+npm run dev
+```
+
+Build check:
+
+```bash
+npm run build
+```
+
+The frontend defaults to:
+
+```text
+http://localhost:8000
 ws://localhost:8000/ws/predictions
 ```
 
-The URL can be overridden with:
+Override backend URLs if needed:
 
 ```bash
-VITE_MMYOGA_WS_URL=ws://localhost:8000/ws/predictions npm run dev
+VITE_MMYOGA_API_URL=http://localhost:8000 \
+VITE_MMYOGA_WS_URL=ws://localhost:8000/ws/predictions \
+npm run dev
 ```
 
-The dashboard expects WebSocket messages in this shape:
+If the backend WebSocket is unavailable, the frontend falls back to local mock data so the UI can still be reviewed.
+
+## Dashboard Message Shape
+
+The frontend consumes JSON only. It does not parse `.dat` files directly.
+
+Example WebSocket message:
 
 ```json
 {
@@ -53,91 +178,64 @@ The dashboard expects WebSocket messages in this shape:
       "x": 2.4,
       "y": 0.1,
       "z": 0.8,
-      "intensity": 14.2,
+      "intensity": 0,
       "velocity": 0
     }
   ],
+  "point_sets": {
+    "projected_radar": [],
+    "filtered_radar": [],
+    "raw_radar": []
+  },
   "metrics": {
     "fps": 10,
-    "latency_ms": 42
+    "latency_ms": 4.2
   }
 }
 ```
 
-If the WebSocket connection fails, `usePredictionStream` generates local mock messages with the same structure, so the page can still run without the backend.
+The dashboard currently supports three radar display modes:
 
-## Radar Point Cloud Display
+- `Projected`: filtered radar history with `x` flattened, matching the current visualizer-style radar panel convention.
+- `Filtered`: filtered radar points with xyz preserved.
+- `Raw`: raw radar points from the replay file.
 
-`RadarPointCloud.jsx` uses Three.js `BufferGeometry` to render the point cloud:
+## Pose Labels
 
-- Point positions use the original `x`, `y`, and `z` values.
-- The frontend does not perform 2D projection or flatten the point cloud.
-- The `z` axis is treated as the vertical height axis, matching the existing Python visualizer convention as closely as possible.
-- Point color is lightly mapped from `intensity` for readability. This only affects display and does not modify point coordinates.
-- The camera auto-frames incoming data at first. After the user manually rotates or zooms, the camera preserves the user's chosen viewpoint.
+Current labels:
 
-In short, the 3D panel is meant to display the radar frame as directly as possible, not to preprocess data for the model.
-
-## Run Frontend
-
-Enter the frontend directory:
-
-```bash
-cd frontend
+```text
+t_pose
+straight_pose
+warrior_pose
+other_pose
 ```
 
-Install dependencies:
+These match the current collection plan:
 
-```bash
-npm install
-```
+- T pose
+- Straight pose
+- Warrior pose
+- Other or unrelated poses
 
-Start the development server:
+## Original Python Visualizer
 
-```bash
-npm run dev
-```
-
-Open the local URL printed by Vite.
-
-Build check:
-
-```bash
-npm run build
-```
-
-The build may show a Vite chunk-size warning because Three.js is large. This is a warning, not a build failure.
-
-## Python Visualizer
-
-The existing offline visualizer remains here:
+The team's existing offline visualizer remains at:
 
 ```text
 point_visualizer/visualizer.py
 ```
 
-The visualizer and frontend are two separate display paths:
+Example usage:
 
-- Python visualizer: local GUI for inspecting recorded `.dat` radar/camera files.
-- Web frontend: browser dashboard for displaying pose predictions and radar points from WebSocket JSON messages.
+```bash
+python point_visualizer/visualizer.py \
+  --file OneDrive/DepthCam_Radar_Cloud_Combined/cam_radar_1783260788477740516.dat
+```
 
-The current frontend work does not modify `point_visualizer/visualizer.py`.
+The web dashboard and the Python visualizer are separate display paths:
 
-## Current Pose Labels
+- Python visualizer: local GUI for inspecting recorded `.dat` files.
+- Web dashboard: browser UI fed by backend JSON over WebSocket.
 
-The dashboard currently uses four pose labels:
-
-- `t_pose`
-- `straight_pose`
-- `warrior_pose`
-- `other_pose`
-
-These match the current data collection plan: T pose, straight pose, warrior pose, and unrelated/other poses.
-
-## Important Notes
-
-- The frontend can run independently without the backend.
-- Before a real replay backend is connected, prediction and points may come from the local mock stream.
-- The frontend consumes JSON messages only. It does not parse `.dat` files directly.
-- The AI model is not connected in this stage. Future backend work can replace mock prediction output with real model inference.
-
+The MVP backend/frontend work does not modify the original visualizer.
