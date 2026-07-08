@@ -4,3 +4,5 @@ PyOpenGL
 PyQt6
 pyqtgraph
 zstandard
+fastapi
+uvicorn[standard]

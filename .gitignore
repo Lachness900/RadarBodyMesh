@@ -3,6 +3,7 @@ train.dat
 test.dat
 raw.bin
 cam_radar_1783260788477740516.dat
+OneDrive/
 
 # Python
 __pycache__/
@@ -10,6 +11,17 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+
+# Local datasets and model artifacts
+data/raw/
+data/processed/
+data/replay/
+models/*
+!models/.gitkeep
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
 
 # macOS
 .DS_Store
