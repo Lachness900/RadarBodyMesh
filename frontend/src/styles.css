@@ -143,47 +143,27 @@ h1 {
   transition: width 120ms ease;
 }
 
-.radar-summary-panel {
-  display: grid;
-  align-content: start;
-  gap: 24px;
+.pointcloud-panel {
+  position: relative;
+  min-height: 0;
 }
 
-.point-count {
-  display: grid;
-  gap: 4px;
-  color: #171b25;
-  font-size: clamp(2.4rem, 5vw, 4.2rem);
-  font-weight: 850;
-  line-height: 0.95;
+.pointcloud-scene {
+  width: 100%;
+  /* Fixed responsive height prevents the WebGL canvas from expanding the page. */
+  height: clamp(280px, 42vh, 460px);
+  min-height: 0;
+  display: block;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f8fafc;
 }
 
-.point-count span {
-  color: #5f6e6f;
-  font-size: 0.85rem;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.sample-table {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 10px;
-  color: #5f6e6f;
-  font-size: 0.76rem;
-  font-weight: 800;
-}
-
-.sample-row {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  min-width: 0;
-  border-top: 1px solid rgba(34, 40, 56, 0.1);
-  padding-top: 8px;
-  color: #222838;
-  font-size: 0.82rem;
+.pointcloud-scene canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .status-strip {

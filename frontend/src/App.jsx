@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { ConfidenceBars } from "./components/ConfidenceBars";
 import { PredictionPanel } from "./components/PredictionPanel";
-import { RadarSummary } from "./components/RadarSummary";
+import { RadarPointCloud } from "./components/RadarPointCloud";
 import { StatusStrip } from "./components/StatusStrip";
 import { usePredictionStream } from "./hooks/usePredictionStream";
 
@@ -25,7 +25,7 @@ export default function App() {
       <div className="dashboard-grid">
         <PredictionPanel prediction={message.prediction} />
         <ConfidenceBars probabilities={message.prediction?.probabilities} />
-        <RadarSummary points={message.points} />
+        <RadarPointCloud points={message.points} />
       </div>
 
       <StatusStrip message={message} status={status} />
