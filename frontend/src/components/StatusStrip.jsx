@@ -1,16 +1,30 @@
-export function StatusStrip({ message, status }) {
+function fileLabel(path) {
+  if (!path) return "none";
+  return path.split("/").pop() || path;
+}
+
+export function StatusStrip({ message, pointCount, selection, status }) {
   const source = message?.source || "mock";
   const metrics = message?.metrics || {};
+  const fpsLabel = source === "mock" ? "mock fps" : "replay fps";
+  const connectionLabel =
+    status === "mock" ? (source === "mock" ? "local mock" : "connected") : status;
+  const items = [
+    connectionLabel,
+    source,
+    ...(selection?.source === "replay" ? [fileLabel(selection?.replayFile)] : []),
+    `${(metrics.fps || 0).toFixed(1)} ${fpsLabel}`,
+    `${pointCount} points`,
+  ];
+
   return (
     <section className="status-strip">
-      <div>
-        <span className={`status-dot ${status}`} />
-        <span>{status}</span>
-      </div>
-      <div>source {source}</div>
-      <div>fps {(metrics.fps || 0).toFixed(1)}</div>
-      <div>latency {(metrics.latency_ms || 0).toFixed(1)} ms</div>
-      <div>points {(message?.points || []).length}</div>
+      <span className={`status-dot ${connectionLabel === "connected" ? "connected" : status}`} />
+      {items.map((item) => (
+        <span className="status-item" key={item}>
+          {item}
+        </span>
+      ))}
     </section>
   );
 }

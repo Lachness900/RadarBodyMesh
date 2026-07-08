@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { WS_URL } from "../constants";
+import { buildPredictionWsUrl } from "../constants";
 import { makeMockMessage } from "../mockData";
 
 /**
@@ -7,7 +7,7 @@ import { makeMockMessage } from "../mockData";
  * Backend data wins when ws://localhost:8000 is available; otherwise the hook
  * switches to the local mock stream so the UI remains usable.
  */
-export function usePredictionStream() {
+export function usePredictionStream(sourceSelection) {
   const [message, setMessage] = useState(() => makeMockMessage(0));
   const [status, setStatus] = useState("mock");
 
@@ -27,7 +27,7 @@ export function usePredictionStream() {
     };
 
     try {
-      websocket = new WebSocket(WS_URL);
+      websocket = new WebSocket(buildPredictionWsUrl(sourceSelection));
       websocket.onopen = () => {
         if (!isActive) return;
         setStatus("connected");
@@ -57,7 +57,7 @@ export function usePredictionStream() {
       if (websocket) websocket.close();
       if (mockTimer) window.clearInterval(mockTimer);
     };
-  }, []);
+  }, [sourceSelection.replayFile, sourceSelection.source]);
 
   return { message, status };
 }

@@ -1,5 +1,15 @@
 export const WS_URL =
   import.meta.env.VITE_MMYOGA_WS_URL || "ws://localhost:8000/ws/predictions";
+export const API_URL = import.meta.env.VITE_MMYOGA_API_URL || "http://localhost:8000";
+
+export function buildPredictionWsUrl({ source, replayFile }) {
+  const url = new URL(WS_URL);
+  url.searchParams.set("source", source || "auto");
+  if (replayFile) {
+    url.searchParams.set("replay_file", replayFile);
+  }
+  return url.toString();
+}
 
 export const POSES = [
   { key: "t_pose", label: "T Pose", color: "#0f8b8d" },

@@ -29,6 +29,7 @@ export function makeMockMessage(tick) {
       velocity: 0,
     };
   });
+  const visualizerPoints = points.map((point) => ({ ...point, x: 0 }));
 
   return {
     timestamp_ms: tick * 100,
@@ -39,6 +40,11 @@ export function makeMockMessage(tick) {
       probabilities,
     },
     points,
+    point_sets: {
+      projected_radar: visualizerPoints,
+      filtered_radar: points,
+      raw_radar: points,
+    },
     metrics: {
       fps: 10,
       latency_ms: 8 + Math.abs(Math.sin(phase)) * 6,
