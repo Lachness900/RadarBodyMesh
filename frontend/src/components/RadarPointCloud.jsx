@@ -24,20 +24,20 @@ const POINT_MODES = [
 const AXIS_SIZE = 12;
 const AXIS_TICK_SPACING = 1;
 const RADAR_VIEW_DISTANCE = 5;
-const COORDINATE_CENTER = new THREE.Vector3(0, 0, 0);
+const RADAR_VIEW_TARGET = new THREE.Vector3(0, 0, 1);
 
 /**
- * Reset to a stable radar coordinate view. The coordinate center remains the
- * camera target, and the camera looks along the positive X direction.
+ * Reset to a stable radar view. The camera looks along the positive X
+ * direction while focusing on a fixed point 5m above the origin.
  */
 function resetCameraToRadarView(camera, controls) {
   camera.up.set(0, 0, 1);
-  camera.position.set(-RADAR_VIEW_DISTANCE, 0, 0);
-  camera.lookAt(COORDINATE_CENTER);
+  camera.position.set(-RADAR_VIEW_DISTANCE, 0, RADAR_VIEW_TARGET.z);
+  camera.lookAt(RADAR_VIEW_TARGET);
   camera.near = 0.01;
   camera.far = 1000;
   camera.updateProjectionMatrix();
-  controls.target.copy(COORDINATE_CENTER);
+  controls.target.copy(RADAR_VIEW_TARGET);
   controls.update();
   controls.saveState();
 }
@@ -184,9 +184,9 @@ export function RadarPointCloud({ mode, onModeChange, points, pointSets, viewKey
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    // Keep the radar coordinate center fixed in the middle of the view. Users
-    // can rotate/zoom, but cannot pan the target away from (0, 0, 0).
-    controls.enablePan = false;
+    // Allow free inspection by panning, rotating, and zooming. The Reset View
+    // button restores the centered radar view when needed.
+    controls.enablePan = true;
     controlsRef.current = controls;
     resetCameraToRadarView(camera, controls);
 
