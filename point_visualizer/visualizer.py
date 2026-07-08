@@ -56,7 +56,7 @@ class RadarPlotter(QMainWindow):
         self.add_3d_axes_with_ticks(self.view1, size=axis_size, spacing=tick_spacing)
 
         self.view2 = gl.GLViewWidget()
-        self.view2.setCameraPosition(distance=45, elevation=20, azimuth=45)
+        self.view2.setCameraPosition(distance=5, elevation=0, azimuth=0)
         display_layout.addWidget(self.view2)
 
         # tick  grid
@@ -262,7 +262,9 @@ def filter_data(data: NDArray):
     )
 
     return data[mask]
-        
+
+def run_ai_model(data: NDArray):
+    pass
 
 
 def main() -> int:
@@ -325,7 +327,11 @@ def main() -> int:
                         saved_points = len(current_points) + len(data)
                         if saved_points >= max_points:
                             excess = saved_points - max_points
-                            plotter.update_data(data2=np.append(current_points, data).reshape(-1, 3))
+                            points = np.append(current_points, data).reshape(-1, 3)
+                            points[:, 0] = 0
+                            plotter.update_data(data2=points)
+                            # Send to AI model here (np.append(current_points, data).reshape(-1, 3)) (in terms of (y, z) points)
+                            run_ai_model(points)
                             current_points = [data[:excess]]
                         else:
                             current_points = np.append(current_points, data).reshape(-1, 3)
