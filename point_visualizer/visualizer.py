@@ -156,6 +156,11 @@ class RadarPlotter(QMainWindow):
             self.scatter2.setData(pos=data2[:, :3], size=3)
 
 
+class ReaderParserError(Exception):
+    def __init__(self, reason):
+        super().__init__(reason)
+
+
 class DatReader:
     def __init__(self, path: Path):
         self._file_path = path
