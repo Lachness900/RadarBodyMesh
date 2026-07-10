@@ -166,69 +166,47 @@ class DatReader:
         """
         Parses a ZSTD compressed binary file containing PointCloud messages
         """
-        try:
-            with self._file_path.open("rb") as f:
-                compressed_data = f.read()
-        except FileNotFoundError as ex:
-            raise StopIteration(f"{ex}")
-        except Exception:
-            raise StopIteration()
-        dctx = ZstdDecompressor()
-        decompressed_data = b"".join(dctx.read_to_iter(compressed_data))
+        with self._file_path.open("rb") as f:
+            dctx = ZstdDecompressor()
 
-        HEADER_DELIMITER = b"::"
-        FOOTER_DELIMITER = b";;"
+            SOF_DELIMITER = b"::"
+            EOF_DELIMITER = b";;"
+            HEADER_META_SIZE = len(SOF_DELIMITER) + struct.calcsize("<IBI")
 
-        METADATA_SIZE = 7
+            with dctx.stream_reader(f) as reader:
+                while True:
+                    header = reader.read(HEADER_META_SIZE)
+                    # print(header)
+                    if header is None or not header:
+                        break
+                    elif len(header) < HEADER_META_SIZE:
+                        raise EOFError("Unexpected EOF while reading metadata.")
+                    try:
+                        _, timestamp_us, message_type, payload_length = struct.unpack(
+                            "<2sIBI", header
+                        )
+                    except struct.error as e:
+                        raise ReaderParserError(f"Invalid Parse Syntax: {e}")
+                    # print(timestamp_us, message_type, payload_length)
 
-        messages = []
-        cursor = 0
-        data_len = len(decompressed_data)
+                    raw_payload = reader.read(payload_length)
+                    point_cloud_np = np.frombuffer(raw_payload, dtype=np.int16) / 1000
+                    point_cloud_np = point_cloud_np.reshape((-1, 3))
 
-        while cursor < data_len:
-            # Find the next header start
-            header_idx = decompressed_data.find(HEADER_DELIMITER, cursor)
-            if header_idx == -1:
-                break  # EOF
+                    footer = reader.read(len(EOF_DELIMITER))
+                    if footer != EOF_DELIMITER:
+                        raise ValueError(
+                            f"Stream corrupted: Expected {EOF_DELIMITER}, got {footer}"
+                        )
 
-            # Find the corresponding footer
-            footer_idx = decompressed_data.find(FOOTER_DELIMITER, header_idx)
-            if footer_idx == -1:
-                print(f"Warning: Found header at {header_idx} but no matching footer.")
-                break
+                    yield {
+                        "timestamp_us": timestamp_us,
+                        "message_type": message_type,
+                        "point_cloud": point_cloud_np,
+                    }
 
-            # extract metadata (2 + 4 + 1)
-            try:
-                # throw away header
-                _, timestamp_us, message_type = struct.unpack(
-                    "<2sIB", decompressed_data[header_idx : header_idx + METADATA_SIZE]
-                )
-            except struct.error as e:
-                print(f"Error parsing metadata block at index {header_idx}: {e}")
-                break
-
-            payload_start = header_idx + METADATA_SIZE
-            payload_end = footer_idx
-            raw_payload = decompressed_data[payload_start:payload_end]
-
-            point_cloud_np = np.frombuffer(raw_payload, dtype=np.int16) / 1000
-            point_cloud_np = point_cloud_np.reshape((-1, 3))
-
-            # message types for readability
-            msg_type_str = "Unknown"
-            if message_type == 1:  # "Depth Camera"
-                msg_type_str = "Depth Camera"
-            elif message_type == 2:  # "mmWave Radar"
-                msg_type_str = "mmWave Radar"
-
-            # skipp footer
-            cursor = footer_idx + 2
-
-            yield {
-                "timestamp_us": timestamp_us,
-                "message_type": message_type,
-                "point_cloud": point_cloud_np,
-            }
+            return None
+        pass
 
 
 def parse_args() -> argparse.Namespace:
