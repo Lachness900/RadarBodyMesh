@@ -167,11 +167,12 @@ Example WebSocket message:
   "source": "replay",
   "prediction": {
     "label": "straight_pose",
-    "confidence": 0.91,
+    "confidence": 0.89,
     "probabilities": {
       "t_pose": 0.03,
-      "straight_pose": 0.91,
+      "straight_pose": 0.89,
       "warrior_pose": 0.04,
+      "angle_pose": 0.02,
       "other_pose": 0.02
     }
   },
@@ -204,20 +205,23 @@ The dashboard currently supports three radar display modes:
 
 ## Pose Labels
 
-Current labels:
+Current dashboard/model labels use the current 5-class pose plan:
 
 ```text
 t_pose
 straight_pose
 warrior_pose
+angle_pose
 other_pose
 ```
 
-These match the current collection plan:
+Use these exact snake_case keys for dataset metadata, backend predictions, and
+future model outputs. They match the current collection plan:
 
 - T pose
 - Straight pose
 - Warrior pose
+- Angle pose
 - Other or unrelated poses
 
 ## Original Python Visualizer

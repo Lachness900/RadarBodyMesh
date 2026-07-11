@@ -23,7 +23,7 @@ def filter_points(
 
     The default bounds are inherited from the existing visualizer's rough subject
     area. They are useful for a first replay MVP, but should be re-tuned once the
-    team records the real four-pose yoga dataset.
+    team records the final labelled yoga dataset.
     """
 
     points = np.asarray(points, dtype=np.float64)

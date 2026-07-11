@@ -16,7 +16,13 @@ from typing import Optional, Sequence, Union
 import numpy as np
 from numpy.typing import NDArray
 
-DEFAULT_POSE_LABELS = ["t_pose", "straight_pose", "warrior_pose", "other_pose"]
+DEFAULT_POSE_LABELS = [
+    "t_pose",
+    "straight_pose",
+    "warrior_pose",
+    "angle_pose",
+    "other_pose",
+]
 
 
 @dataclass(frozen=True)
