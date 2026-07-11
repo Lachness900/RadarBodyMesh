@@ -1,10 +1,15 @@
 """Streaming parser for synchronized depth-camera/mmWave point-cloud recordings.
 
-The current recording format is documented in
+The recording format is documented in
 ``OneDrive/DepthCam_Radar_Cloud_Combined/FORMAT.md``. Files are Zstandard
-compressed byte streams containing packets:
+compressed byte streams. The current packet format is:
 
-    b"::" + uint32 timestamp_us + uint8 message_type + int16 xyz payload + b";;"
+    b"::" + uint32 timestamp_us + uint8 message_type
+    + uint32 payload_size + int16 xyz payload + b";;"
+
+The first sample recordings used an older packet format without
+``payload_size``. This parser supports both so old smoke-test recordings and
+new labelled recordings can use the same backend.
 
 Coordinates are stored as millimetres and converted back to metres here.
 """
@@ -22,10 +27,18 @@ import zstandard as zstd
 
 HEADER = b"::"
 FOOTER = b";;"
-# Packet metadata is exactly the format used by the existing visualizer/main.py:
-# 2-byte header, 4-byte timestamp in microseconds, and 1-byte message type.
-METADATA_FORMAT = "<2sIB"
-METADATA_SIZE = struct.calcsize(METADATA_FORMAT)
+LEGACY_METADATA_FORMAT = "<2sIB"
+LEGACY_METADATA_SIZE = struct.calcsize(LEGACY_METADATA_FORMAT)
+SIZED_METADATA_FORMAT = "<2sIBI"
+SIZED_METADATA_SIZE = struct.calcsize(SIZED_METADATA_FORMAT)
+# Backwards-compatible aliases for older import sites.
+METADATA_FORMAT = LEGACY_METADATA_FORMAT
+METADATA_SIZE = LEGACY_METADATA_SIZE
+BYTES_PER_POINT = np.dtype(np.int16).itemsize * 3
+# FORMAT.md describes payloads up to roughly 2 MB. Keep headroom for camera
+# frames while still rejecting obviously bogus legacy payload bytes interpreted
+# as a new-format length.
+MAX_PAYLOAD_BYTES = 8 * 1024 * 1024
 
 DEPTH_CAMERA_MESSAGE = 1
 RADAR_MESSAGE = 2
@@ -134,19 +147,36 @@ def iter_dat_frames(
                         buffer = buffer[-(METADATA_SIZE - 1) :]
                         break
 
-                    if len(buffer) < header_index + METADATA_SIZE:
+                    if len(buffer) < header_index + LEGACY_METADATA_SIZE:
                         # We found a header but not enough bytes for metadata yet.
                         buffer = buffer[header_index:]
                         break
 
-                    footer_index = buffer.find(FOOTER, header_index + METADATA_SIZE)
+                    buffer = buffer[header_index:]
+                    sized_packet_length = _sized_packet_length(buffer)
+                    if sized_packet_length is not None:
+                        if len(buffer) < sized_packet_length:
+                            break
+                        packet = buffer[:sized_packet_length]
+                        if packet[-len(FOOTER) :] == FOOTER:
+                            buffer = buffer[sized_packet_length:]
+                            frame = parse_packet(packet, strict=strict)
+                            if frame is None:
+                                continue
+                            if allowed_types is not None and frame.message_type not in allowed_types:
+                                continue
+                            yield frame
+                            continue
+                        # If the claimed payload size does not lead to a footer,
+                        # treat this as a legacy packet candidate below.
+
+                    footer_index = buffer.find(FOOTER, LEGACY_METADATA_SIZE)
                     if footer_index == -1:
                         # Preserve the partial packet and continue after reading
                         # the next decompressed chunk.
-                        buffer = buffer[header_index:]
                         break
 
-                    packet = buffer[header_index : footer_index + len(FOOTER)]
+                    packet = buffer[: footer_index + len(FOOTER)]
                     buffer = buffer[footer_index + len(FOOTER) :]
                     frame = parse_packet(packet, strict=strict)
                     if frame is None:
@@ -156,17 +186,46 @@ def iter_dat_frames(
                     yield frame
 
 
+def _sized_packet_length(buffer: bytes) -> Optional[int]:
+    """Return total new-format packet length when the header is plausible."""
+
+    if len(buffer) < SIZED_METADATA_SIZE:
+        return None
+    try:
+        header, _timestamp_us, _message_type, payload_size = struct.unpack(
+            SIZED_METADATA_FORMAT, buffer[:SIZED_METADATA_SIZE]
+        )
+    except struct.error:
+        return None
+    if header != HEADER:
+        return None
+    if payload_size > MAX_PAYLOAD_BYTES:
+        return None
+    if payload_size % BYTES_PER_POINT != 0:
+        return None
+    return SIZED_METADATA_SIZE + payload_size + len(FOOTER)
+
+
 def parse_packet(packet: bytes, *, strict: bool = False) -> Optional[PointCloudFrame]:
     """Parse one raw packet into a :class:`PointCloudFrame`."""
 
-    if len(packet) < METADATA_SIZE + len(FOOTER):
+    sized_packet_length = _sized_packet_length(packet)
+    if sized_packet_length == len(packet) and packet[-len(FOOTER) :] == FOOTER:
+        return _parse_sized_packet(packet, strict=strict)
+    return _parse_legacy_packet(packet, strict=strict)
+
+
+def _parse_sized_packet(packet: bytes, *, strict: bool = False) -> Optional[PointCloudFrame]:
+    """Parse the current size-prefixed packet format."""
+
+    if len(packet) < SIZED_METADATA_SIZE + len(FOOTER):
         if strict:
             raise ValueError("Packet is shorter than metadata and footer.")
         return None
 
     try:
-        header, timestamp_us, message_type = struct.unpack(
-            METADATA_FORMAT, packet[:METADATA_SIZE]
+        header, timestamp_us, message_type, payload_size = struct.unpack(
+            SIZED_METADATA_FORMAT, packet[:SIZED_METADATA_SIZE]
         )
     except struct.error:
         if strict:
@@ -178,11 +237,60 @@ def parse_packet(packet: bytes, *, strict: bool = False) -> Optional[PointCloudF
             raise ValueError("Packet delimiters are invalid.")
         return None
 
-    payload = packet[METADATA_SIZE : -len(FOOTER)]
-    # The payload stores xyz triplets as int16 millimetres. A valid packet must
-    # therefore be divisible by 3 coordinates * 2 bytes per int16.
-    bytes_per_point = np.dtype(np.int16).itemsize * 3
-    if len(payload) % bytes_per_point != 0:
+    payload = packet[SIZED_METADATA_SIZE : -len(FOOTER)]
+    if len(payload) != payload_size:
+        if strict:
+            raise ValueError(
+                f"Declared payload size {payload_size} does not match {len(payload)} bytes."
+            )
+        return None
+    points = _payload_to_points(payload, strict=strict)
+    if points is None:
+        return None
+    return PointCloudFrame(
+        timestamp_us=int(timestamp_us),
+        message_type=int(message_type),
+        points=points,
+    )
+
+
+def _parse_legacy_packet(packet: bytes, *, strict: bool = False) -> Optional[PointCloudFrame]:
+    """Parse the original packet format that had no payload-size field."""
+
+    if len(packet) < LEGACY_METADATA_SIZE + len(FOOTER):
+        if strict:
+            raise ValueError("Packet is shorter than metadata and footer.")
+        return None
+
+    try:
+        header, timestamp_us, message_type = struct.unpack(
+            LEGACY_METADATA_FORMAT, packet[:LEGACY_METADATA_SIZE]
+        )
+    except struct.error:
+        if strict:
+            raise
+        return None
+
+    if header != HEADER or packet[-len(FOOTER) :] != FOOTER:
+        if strict:
+            raise ValueError("Packet delimiters are invalid.")
+        return None
+
+    payload = packet[LEGACY_METADATA_SIZE : -len(FOOTER)]
+    points = _payload_to_points(payload, strict=strict)
+    if points is None:
+        return None
+    return PointCloudFrame(
+        timestamp_us=int(timestamp_us),
+        message_type=int(message_type),
+        points=points,
+    )
+
+
+def _payload_to_points(payload: bytes, *, strict: bool = False) -> Optional[NDArray[np.float64]]:
+    """Convert an int16 millimetre xyz payload into metres."""
+
+    if len(payload) % BYTES_PER_POINT != 0:
         if strict:
             raise ValueError(
                 f"Point-cloud payload length {len(payload)} is not divisible by 6."
@@ -190,17 +298,11 @@ def parse_packet(packet: bytes, *, strict: bool = False) -> Optional[PointCloudF
         return None
 
     if not payload:
-        points = np.empty((0, 3), dtype=np.float64)
-    else:
-        # Convert back to metres so downstream code can use physical units.
-        points = np.frombuffer(payload, dtype=np.int16).astype(np.float64) / 1000.0
-        points = points.reshape((-1, 3))
+        return np.empty((0, 3), dtype=np.float64)
 
-    return PointCloudFrame(
-        timestamp_us=int(timestamp_us),
-        message_type=int(message_type),
-        points=points,
-    )
+    # Convert back to metres so downstream code can use physical units.
+    points = np.frombuffer(payload, dtype=np.int16).astype(np.float64) / 1000.0
+    return points.reshape((-1, 3))
 
 
 def read_preview(

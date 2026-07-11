@@ -61,6 +61,8 @@ OneDrive/DepthCam_Radar_Cloud_Combined/cam_radar_1783260788477740516.dat
 
 `OneDrive/` is intentionally ignored by Git because it contains large local data files. If the default replay file is missing, the backend and frontend can still run in mock mode.
 
+The current recording format is documented in `OneDrive/DepthCam_Radar_Cloud_Combined/FORMAT.md`. The backend parser supports that size-prefixed packet format and the older no-size packet format used by the first sample replay file, so both teammate-provided datasets and the existing smoke-test replay can be opened.
+
 Uploaded `.dat` files from the dashboard are stored under:
 
 ```text
