@@ -5,14 +5,15 @@ import time
 import threading
 from pathlib import Path
 import argparse
-from typing import Optional, Type
+from typing import Optional
 import struct
 
+from PyQt6.QtCore import QRect, QPoint, QSize, QTimer
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QImage, QPixmap
 import pyqtgraph.opengl as gl
-import pyqtgraph as pg
 from zstandard import ZstdDecompressor
+import cv2
 
 import numpy as np
 from numpy.typing import NDArray
@@ -59,20 +60,29 @@ class RadarPlotter(QMainWindow):
         self.view2.setCameraPosition(distance=5, elevation=0, azimuth=0)
         display_layout.addWidget(self.view2)
 
-        # tick  grid
-        grid2 = gl.GLGridItem()
-        grid2.setSize(x=axis_size * 2, y=axis_size * 2)
-        grid2.setSpacing(x=tick_spacing, y=tick_spacing)
-        self.view2.addItem(grid2)
-
         self.scatter2 = gl.GLScatterPlotItem(
             size=2,
-            # color=(0.2, 1.0, 1.0, 0.8),
             pxMode=True,
         )
         self.view2.addItem(self.scatter2)
-        self.add_3d_axes_with_ticks(self.view2, size=axis_size, spacing=tick_spacing)
+        self.add_basic_2d_axes(self.view2, size=axis_size)
 
+    def add_basic_2d_axes(self, view, size):
+        """
+        Same as the following but only uses Y, Z axes without ticks or labels
+        """
+        pos = []
+        pos.extend([[0, -size, 0], [0, size, 0]])
+        pos.extend([[0, 0, -size], [0, 0, size]])
+
+        lines_item = gl.GLLinePlotItem(
+            pos=np.array(pos, dtype=float),
+            color=(1,0,0,1), # red
+            mode="lines",
+            width=0.8,
+        )
+        view.addItem(lines_item)
+    
     def add_3d_axes_with_ticks(self, view, size, spacing):
         """
         Creates custom X, Y, and Z axes stretching from -size to +size,
@@ -155,6 +165,31 @@ class RadarPlotter(QMainWindow):
         if data2 is not None:
             self.scatter2.setData(pos=data2[:, :3], size=3)
 
+def send_frame_to_ai(pixels: QPixmap):
+    try:
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_writer = cv2.VideoWriter('output.mp4', fourcc, 20, (946, 978))
+        while True:
+            if pixels.isNull():
+                return
+            
+            img = pixels.toImage().convertToFormat(QImage.Format.Format_RGB888)
+
+            width, height = img.width(), img.height()
+            ptr = img.constBits()
+            ptr.setsize(height * img.bytesPerLine())
+
+            print(width, height)
+
+            img.save("point_visualizer/images/output.png")
+            fileImg = cv2.imread("point_visualizer/images/output.png")
+            video_writer.write(fileImg)
+            yield video_writer
+    finally:
+        video_writer.release()
+        print("Released")
+        
+
 
 class ReaderParserError(Exception):
     def __init__(self, reason):
@@ -236,7 +271,7 @@ def parse_args() -> argparse.Namespace:
 def filter_data(data: NDArray):
     x_bound = (2, 4)
     y_bound = (-1, 2)
-    z_bound = (-1, 1)
+    z_bound = (-1.5, 1.5)
 
     mask = (
         (data[:, 0] >= x_bound[0]) & (data[:, 0] <= x_bound[1]) &
@@ -254,18 +289,16 @@ def main() -> int:
     args = parse_args()
     path = args.path
 
-    exit_event = threading.Event()
-
     app = QApplication(sys.argv)
 
     dat_reader = DatReader(path)
     plotter = RadarPlotter()
     plotter.show()
+    video_writer = send_frame_to_ai(plotter.view2.grab())
 
     def data_plot():
         nonlocal dat_reader
         nonlocal plotter
-        nonlocal exit_event
         current_tick_us = 0
         try:
             for d in dat_reader.nextFrame():
@@ -285,18 +318,14 @@ def main() -> int:
                 current_tick_us = new_tick_us
                 time.sleep(diff_tick_us / 1e6)
         except KeyboardInterrupt:
-            exit_event.set()
             return
-        exit_event.set()
         return
 
     def accumulated_data_plot():
             nonlocal dat_reader
             nonlocal plotter
-            nonlocal exit_event
             current_tick_us = 0
             current_points = np.array([])
-
             # Set number of points to accumulate
             max_points = 100
             try:
@@ -308,16 +337,15 @@ def main() -> int:
                     if msg_type == 2:
                         data = filter_data(msg)
                         saved_points = len(current_points) + len(data)
+                        current_points = np.append(current_points, data).reshape(-1, 3)
                         if saved_points >= max_points:
-                            excess = saved_points - max_points
-                            points = np.append(current_points, data).reshape(-1, 3)
+                            points = current_points
                             points[:, 0] = 0
                             plotter.update_data(data2=points)
-                            # Send to AI model here (np.append(current_points, data).reshape(-1, 3)) (in terms of (y, z) points)
-                            run_ai_model(points)
-                            current_points = [data[:excess]]
-                        else:
-                            current_points = np.append(current_points, data).reshape(-1, 3)
+
+                            QApplication.processEvents()
+                            video_writer = send_frame_to_ai(plotter.view2.grab()) #QRect(QPoint(150, 200), QSize(375, 375))
+                            current_points = [data[:saved_points - max_points]]
                     elif msg_type == 1:
                         plotter.update_data(data1=msg)
     
@@ -326,20 +354,23 @@ def main() -> int:
                     current_tick_us = new_tick_us
                     time.sleep(diff_tick_us / 1e6)
             except KeyboardInterrupt:
-                exit_event.set()
+                plotter_timer.stop()
+                video_writer.close()
+                print("Interupted")
                 return
-            exit_event.set()
             return
     
 
-    plotter_thread = threading.Thread(target=accumulated_data_plot, args=())
-    plotter_thread.start()
+    plotter_timer = QTimer()
+    plotter_timer.timeout.connect(accumulated_data_plot)
+    plotter_timer.start(20)
     try:
         app.exec()
-        exit_event.wait()
+        plotter_timer.stop()
     except KeyboardInterrupt:
+        print("Interupted")
+        video_writer.close()
         pass
-    plotter_thread.join()
     return 0
 
 
