@@ -165,29 +165,17 @@ class RadarPlotter(QMainWindow):
         if data2 is not None:
             self.scatter2.setData(pos=data2[:, :3], size=3)
 
-def send_frame_to_ai(pixels: QPixmap):
-    try:
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_writer = cv2.VideoWriter('output.mp4', fourcc, 20, (946, 978))
-        while True:
+    def visualiser_screenshot(self, path: str = "point_visualizer/images/output.png"):
+            """
+            Loads visualiser into a file
+            """
+
+            pixels = self.view2.grab()
             if pixels.isNull():
                 return
             
             img = pixels.toImage().convertToFormat(QImage.Format.Format_RGB888)
-
-            width, height = img.width(), img.height()
-            ptr = img.constBits()
-            ptr.setsize(height * img.bytesPerLine())
-
-            print(width, height)
-
-            img.save("point_visualizer/images/output.png")
-            fileImg = cv2.imread("point_visualizer/images/output.png")
-            video_writer.write(fileImg)
-            yield video_writer
-    finally:
-        video_writer.release()
-        print("Released")
+            img.save(path)
         
 
 
@@ -294,32 +282,7 @@ def main() -> int:
     dat_reader = DatReader(path)
     plotter = RadarPlotter()
     plotter.show()
-    video_writer = send_frame_to_ai(plotter.view2.grab())
-
-    def data_plot():
-        nonlocal dat_reader
-        nonlocal plotter
-        current_tick_us = 0
-        try:
-            for d in dat_reader.nextFrame():
-                msg_type = d["message_type"]
-                msg = d["point_cloud"]
-                new_tick_us = d["timestamp_us"]
-
-                if msg_type == 2:
-                    plotter.update_data(data1=msg)
-                    pass
-                elif msg_type == 1:
-                    plotter.update_data(data2=msg)
-                    pass
-
-                diff_tick_us = new_tick_us - current_tick_us
-                # print(diff_tick_us / 1e6)
-                current_tick_us = new_tick_us
-                time.sleep(diff_tick_us / 1e6)
-        except KeyboardInterrupt:
-            return
-        return
+    plotter.visualiser_screenshot()
 
     def accumulated_data_plot():
             nonlocal dat_reader
@@ -344,7 +307,8 @@ def main() -> int:
                             plotter.update_data(data2=points)
 
                             QApplication.processEvents()
-                            video_writer = send_frame_to_ai(plotter.view2.grab()) #QRect(QPoint(150, 200), QSize(375, 375))
+                            #takes a screenshot and puts it into the images folder
+                            plotter.visualiser_screenshot("point_visualizer/images/output.jpeg") 
                             current_points = [data[:saved_points - max_points]]
                     elif msg_type == 1:
                         plotter.update_data(data1=msg)
@@ -355,7 +319,6 @@ def main() -> int:
                     time.sleep(diff_tick_us / 1e6)
             except KeyboardInterrupt:
                 plotter_timer.stop()
-                video_writer.close()
                 print("Interupted")
                 return
             return
@@ -369,7 +332,7 @@ def main() -> int:
         plotter_timer.stop()
     except KeyboardInterrupt:
         print("Interupted")
-        video_writer.close()
+        plotter_timer.stop()
         pass
     return 0
 
