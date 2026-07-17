@@ -6,4 +6,4 @@ pyqtgraph
 zstandard
 fastapi
 uvicorn[standard]
-opencv-python
+pyvirtualcam

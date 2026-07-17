@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout
 from PyQt6.QtGui import QFont, QImage, QPixmap
 import pyqtgraph.opengl as gl
 from zstandard import ZstdDecompressor
-import cv2
+import pyvirtualcam
 
 import numpy as np
 from numpy.typing import NDArray
@@ -164,17 +164,7 @@ class RadarPlotter(QMainWindow):
         if data2 is not None:
             self.scatter2.setData(pos=data2[:, :3], size=3)
 
-    def visualiser_screenshot(self, path: str = "point_visualizer/images/output.png"):
-            """
-            Loads visualiser into a file
-            """
-            self.scatter2.size
-            pixels = self.view2.grab()
-            if pixels.isNull():
-                return
             
-            img = pixels.toImage().convertToFormat(QImage.Format.Format_RGB888)
-            img.save(path)
         
 
 
@@ -281,44 +271,60 @@ def main() -> int:
     dat_reader = DatReader(path)
     plotter = RadarPlotter()
     plotter.show()
-    plotter.visualiser_screenshot()
 
     def accumulated_data_plot():
             nonlocal dat_reader
             nonlocal plotter
-            current_tick_us = 0
+            # current_tick_us = 0
             current_points = np.array([])
             # Set number of points to accumulate
             max_points = 100
+            # Base image
+            pixels = plotter.view2.grab()         
+            img = pixels.toImage().convertToFormat(QImage.Format.Format_RGB888)
+            imgHeight = img.height()
+            imgWidth = img.width()
             try:
-                for d in dat_reader.nextFrame():
-                    msg_type = d["message_type"]
-                    msg = d["point_cloud"]
-                    new_tick_us = d["timestamp_us"]
-    
-                    if msg_type == 2:
-                        data = filter_data(msg)
-                        saved_points = len(current_points) + len(data)
-                        current_points = np.append(current_points, data).reshape(-1, 3)
-                        if saved_points >= max_points:
-                            points = current_points
-                            points[:, 0] = 0
-                            plotter.update_data(data2=points)
+                with pyvirtualcam.Camera(width=imgWidth, height=imgHeight,fps=20) as cam:
+                    for d in dat_reader.nextFrame():
+                        msg_type = d["message_type"]
+                        msg = d["point_cloud"]
+                        # new_tick_us = d["timestamp_us"]
 
-                            QApplication.processEvents()
-                            #takes a screenshot and puts it into the images folder
-                            plotter.visualiser_screenshot() 
-                            current_points = [data[:saved_points - max_points]]
-                    elif msg_type == 1:
-                        plotter.update_data(data1=msg)
-    
-                    diff_tick_us = new_tick_us - current_tick_us
-                    # print(diff_tick_us / 1e6)
-                    current_tick_us = new_tick_us
-                    time.sleep(diff_tick_us / 1e6)
+                        if msg_type == 2:
+                            data = filter_data(msg)
+                            saved_points = len(current_points) + len(data)
+                            current_points = np.append(current_points, data).reshape(-1, 3)
+                            if saved_points >= max_points:
+                                points = current_points
+                                points[:, 0] = 0
+                                plotter.update_data(data2=points)
+                                current_points = current_points[data[:saved_points - max_points]]
+
+                                QApplication.processEvents()
+                                pixels = plotter.view2.grab()
+                                if pixels.isNull():
+                                    continue
+                                img = pixels.toImage().convertToFormat(QImage.Format.Format_RGB888)
+                                ptr = img.bits()
+                                ptr.setsize(img.sizeInBytes())
+                                arr = np.frombuffer(ptr, np.uint8)
+                                arr = arr.reshape((imgHeight, img.bytesPerLine()))
+                                arr = arr[:, :imgWidth * 3]
+                                arr = arr.reshape((imgHeight, imgWidth, 3))
+                                cam.send(arr)
+                                cam.sleep_until_next_frame()
+                        elif msg_type == 1:
+                            plotter.update_data(data1=msg)
+
+                        # diff_tick_us = new_tick_us - current_tick_us
+                        # print(diff_tick_us / 1e6)
+                        # current_tick_us = new_tick_us
+                        # time.sleep(diff_tick_us / 1e6)                        
             except KeyboardInterrupt:
-                plotter_timer.stop()
                 print("Interupted")
+                plotter_timer.stop()
+                app.quit()
                 return
             return
     
@@ -328,10 +334,10 @@ def main() -> int:
     plotter_timer.start(20)
     try:
         app.exec()
-        plotter_timer.stop()
     except KeyboardInterrupt:
         print("Interupted")
         plotter_timer.stop()
+        app.quit()
         pass
     return 0
 
