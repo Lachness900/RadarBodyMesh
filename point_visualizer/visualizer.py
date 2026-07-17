@@ -31,7 +31,6 @@ class RadarPlotter(QMainWindow):
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        # control_layout = QVBoxLayout(central_widget)
         display_layout = QHBoxLayout(central_widget)
 
         # Settings for the axes and grid
@@ -169,7 +168,7 @@ class RadarPlotter(QMainWindow):
             """
             Loads visualiser into a file
             """
-
+            self.scatter2.size
             pixels = self.view2.grab()
             if pixels.isNull():
                 return
@@ -308,7 +307,7 @@ def main() -> int:
 
                             QApplication.processEvents()
                             #takes a screenshot and puts it into the images folder
-                            plotter.visualiser_screenshot("point_visualizer/images/output.jpeg") 
+                            plotter.visualiser_screenshot() 
                             current_points = [data[:saved_points - max_points]]
                     elif msg_type == 1:
                         plotter.update_data(data1=msg)
