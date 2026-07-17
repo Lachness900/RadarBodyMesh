@@ -9,9 +9,10 @@ import struct
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QImage
 import pyqtgraph.opengl as gl
 from zstandard import ZstdDecompressor
+import pyvirtualcam
 
 import numpy as np
 from numpy.typing import NDArray
@@ -25,7 +26,6 @@ class RadarPlotter(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Radar Plotter")
-        self.resize(1600, 800)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -162,6 +162,9 @@ class RadarPlotter(QMainWindow):
         if data2 is not None:
             self.scatter2.setData(pos=data2[:, :3], size=3)
 
+            
+        
+
 
 class ReaderParserError(Exception):
     def __init__(self, reason):
@@ -220,6 +223,7 @@ class DatReader:
             return None
         pass
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="A Simple Script to read recorded files and Visualize them",
@@ -252,6 +256,45 @@ def filter_data(data: NDArray):
 
     return data[mask]
 
+def accumulated_data_plot(dat_reader, plotter, size):
+    frames = []
+    current_points = np.array([])
+    imgHeight, imgWidth = size
+    # Set number of points to accumulate
+    max_points = 100
+    # Base image
+    for d in dat_reader.nextFrame():
+        msg_type = d["message_type"]
+        msg = d["point_cloud"]
+
+        if msg_type == 2:
+            data = filter_data(msg)
+            saved_points = len(current_points) + len(data)
+            current_points = np.append(current_points, data).reshape(-1, 3)
+            if saved_points >= max_points:
+                points = current_points
+                points[:, 0] = 0
+                plotter.update_data(data2=points)
+                current_points = current_points[:saved_points - max_points]
+
+                QApplication.processEvents()
+                pixels = plotter.view2.grab()
+                if pixels.isNull():
+                    return
+                img = pixels.toImage().convertToFormat(QImage.Format.Format_RGB888)
+                ptr = img.bits()
+                ptr.setsize(img.sizeInBytes())
+                arr = np.frombuffer(ptr, np.uint8).reshape((imgHeight, img.bytesPerLine()))
+                arr = arr[:, :imgWidth * 3]
+                frames.append(arr.reshape((imgHeight, imgWidth, 3)))  
+    return frames        
+
+def stream_data(frames, size):
+    with pyvirtualcam.Camera(width=size[1], height=size[0], fps=1) as cam:
+        print(f"Using: {cam.device} on {cam.backend}")
+        for frame in frames:
+            cam.send(frame)
+            cam.sleep_until_next_frame()
 
 def main() -> int:
     args = parse_args()
@@ -259,57 +302,17 @@ def main() -> int:
 
     app = QApplication(sys.argv)
 
-    dat_reader = DatReader(path)
     plotter = RadarPlotter()
+    plotter.resize(1600, 800)
     plotter.show()
-
-    def accumulated_data_plot():
-        nonlocal dat_reader
-        nonlocal plotter
-        current_tick_us = 0
-        current_points = np.array([])
-        # Set number of points to accumulate
-        max_points = 100
-        # Base image
-        try:
-            for d in dat_reader.nextFrame():
-                msg_type = d["message_type"]
-                msg = d["point_cloud"]
-                new_tick_us = d["timestamp_us"]
-
-                if msg_type == 2:
-                    data = filter_data(msg)
-                    saved_points = len(current_points) + len(data)
-                    current_points = np.append(current_points, data).reshape(-1, 3)
-                    if saved_points >= max_points:
-                        points = current_points
-                        points[:, 0] = 0
-                        plotter.update_data(data2=points)
-                        current_points = current_points[max_points:]
-                        QApplication.processEvents()               
-                elif msg_type == 1:
-                    plotter.update_data(data1=msg)
-
-
-                diff_tick_us = new_tick_us - current_tick_us
-                current_tick_us = new_tick_us
-                time.sleep(diff_tick_us / 1e6)
-            print("Finished")                    
-        except KeyboardInterrupt:
-            print("Interupted")
-            app.quit()
-            return
-        return
-
-    QTimer.singleShot(50, accumulated_data_plot)
-
-    try:
-        print("Running")
-        app.exec()
-    except KeyboardInterrupt:
-        print("Interupted")
-        app.quit()
-        pass
+    pixels = plotter.view2.grab()         
+    img = pixels.toImage().convertToFormat(QImage.Format.Format_RGB888)
+    size = (img.height(), img.width())
+    dat_reader = DatReader(path)
+    frames = accumulated_data_plot(dat_reader, plotter, size)
+    print("accumulated frames,", len(frames))
+    stream_data(frames, size)
+    print("streamed")
     return 0
 
 

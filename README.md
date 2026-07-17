@@ -245,3 +245,19 @@ The web dashboard and the Python visualizer are separate display paths:
 - Web dashboard: browser UI fed by backend JSON over WebSocket.
 
 The MVP backend/frontend work does not modify the original visualizer.
+
+### Training Visualiser
+
+We found it was efficient to use traditional image recognition techniques so the visualiser
+was used to train the ai.
+
+The training visualiser pipes the output of the file into the OBS virtual camera.
+
+```text
+point_visualizer/visualizer_training.py
+```
+
+To run, you must have OBS downloaded and have run the virtual camera atleast once so your
+computer recognizes it. Similarly to the visualizer, it takes a file as argument.
+
+This is purely for training the ai model and shouldn't be used for visualiasation purposes.
