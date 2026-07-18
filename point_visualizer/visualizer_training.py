@@ -286,14 +286,16 @@ def accumulated_data_plot(dat_reader, plotter, size):
                 ptr.setsize(img.sizeInBytes())
                 arr = np.frombuffer(ptr, np.uint8).reshape((imgHeight, img.bytesPerLine()))
                 arr = arr[:, :imgWidth * 3]
-                frames.append(arr.reshape((imgHeight, imgWidth, 3)))  
+                frame = arr.reshape((imgHeight, imgWidth, 3)).copy()
+                frames.append(frame)  
     return frames        
 
 def stream_data(frames, size):
-    with pyvirtualcam.Camera(width=size[1], height=size[0], fps=1) as cam:
+    with pyvirtualcam.Camera(width=size[1], height=size[0], fps=30) as cam:
         print(f"Using: {cam.device} on {cam.backend}")
-        for frame in frames:
-            cam.send(frame)
+        for i in range(len(frames)):
+            print("frame", i, "of", len(frames))
+            cam.send(frames[i])
             cam.sleep_until_next_frame()
 
 def main() -> int:
@@ -312,7 +314,6 @@ def main() -> int:
     frames = accumulated_data_plot(dat_reader, plotter, size)
     print("accumulated frames,", len(frames))
     stream_data(frames, size)
-    print("streamed")
     return 0
 
 
