@@ -252,6 +252,25 @@ def filter_data(data: NDArray):
 
     return data[mask]
 
+def center_data(
+        points: np.ndarray
+) -> np.ndarray:
+    """
+    Centres the average data to the point (0,0,1)
+    """
+    
+    radar_points = np.asarray(points, dtype=np.float64).copy()
+    if radar_points.size == 0:
+        return np.empty((0, 3), dtype=np.float64)
+    total_point = [0,0,0]
+    for point in points:
+        total_point[0] += point[0]
+        total_point[1] += point[1]
+        total_point[2] += point[2]
+    radar_points[:, 0] = radar_points[:, 0] - total_point[0]/len(points)
+    radar_points[:, 1] = radar_points[:, 1] - total_point[1]/len(points)
+    radar_points[:, 2] = radar_points[:, 2] - total_point[2]/len(points)
+    return radar_points
 
 def main() -> int:
     args = parse_args()
@@ -278,7 +297,7 @@ def main() -> int:
                 new_tick_us = d["timestamp_us"]
 
                 if msg_type == 2:
-                    data = filter_data(msg)
+                    data = center_data(filter_data(msg))
                     saved_points = len(current_points) + len(data)
                     current_points = np.append(current_points, data).reshape(-1, 3)
                     if saved_points >= max_points:
