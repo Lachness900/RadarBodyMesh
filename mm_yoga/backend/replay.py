@@ -13,6 +13,7 @@ from mm_yoga.backend.schemas import MetricsPayload, PredictionMessage, Predictio
 from mm_yoga.data.parser import RADAR_MESSAGE, DatFrameReader
 from mm_yoga.data.preprocess import (
     DEFAULT_RADAR_BOUNDS,
+    Bounds3D,
     filter_points,
     points_to_features,
     to_frontend_points,
@@ -100,6 +101,25 @@ def _projected_radar_points(points: np.ndarray) -> np.ndarray:
     radar_points[:, 0] = 0.0
     return radar_points
 
+def _center_points(
+        points: np.ndarray
+) -> np.ndarray:
+    """
+    Centres the average data to the point (0,0,1)
+    """
+    
+    radar_points = np.asarray(points, dtype=np.float64).copy()
+    if radar_points.size == 0:
+        return np.empty((0, 3), dtype=np.float64)
+    total_point = [0,0,0]
+    for point in points:
+        total_point[0] += point[0]
+        total_point[1] += point[1]
+        total_point[2] += point[2]
+    radar_points[:, 0] = radar_points[:, 0] - total_point[0]/len(points)
+    radar_points[:, 1] = radar_points[:, 1] - total_point[1]/len(points)
+    radar_points[:, 2] = radar_points[:, 2] - total_point[2]/len(points) + 1
+    return radar_points
 
 def _append_recent_points(
     current: np.ndarray,
@@ -146,7 +166,7 @@ def iter_replay_messages(
     model_history = np.empty((0, 3), dtype=np.float64)
     reader = DatFrameReader(replay_file)
     for frame in reader.iter_frames(message_types={RADAR_MESSAGE}):
-        filtered = filter_points(frame.points, bounds=DEFAULT_RADAR_BOUNDS)
+        filtered = _center_points(filter_points(frame.points, bounds=DEFAULT_RADAR_BOUNDS))
         raw_history = _append_recent_points(raw_history, frame.points, limit=256)
         model_history = _append_recent_points(model_history, filtered, limit=128)
         projected_radar = _projected_radar_points(model_history[-100:])
