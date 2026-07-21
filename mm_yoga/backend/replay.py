@@ -18,7 +18,7 @@ from mm_yoga.data.preprocess import (
     points_to_features,
     to_frontend_points,
 )
-from mm_yoga.model.inference import MockPosePredictor
+from mm_yoga.model.inference import MockPosePredictor, PoseClassifier
 
 
 def build_message(
@@ -26,7 +26,7 @@ def build_message(
     timestamp_ms: float,
     source: str,
     points: np.ndarray,
-    predictor,
+    predictor: MockPosePredictor | PoseClassifier,
     fps: float,
     latency_ms: float,
     display_points: Optional[np.ndarray] = None,
@@ -40,7 +40,7 @@ def build_message(
     """
 
     started = time.perf_counter()
-    features = points_to_features(points)
+    features = points_to_features(points, 100)
     prediction = predictor.predict(features)
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     json_point_sets = (

@@ -16,6 +16,9 @@ from typing import Optional, Sequence, Union
 import numpy as np
 from numpy.typing import NDArray
 
+import torch
+import torch.nn as nn
+
 DEFAULT_POSE_LABELS = [
     "t_pose",
     "straight_pose",
@@ -33,6 +36,68 @@ class PredictionResult:
     confidence: float
     probabilities: dict[str, float]
 
+class PoseCNN(nn.Module):
+    def __init__(self, num_classes: int, grid_size: int):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d(1),
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(0.3),
+            nn.Linear(64, num_classes),
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        return self.classifier(x)
+
+
+class PoseClassifier:
+    def __init__(self, checkpoint_path: Path):
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        self.labels = list(ckpt["label_names"])
+        self.grid_size = int(ckpt["grid_size"])
+        self.lo = np.asarray(ckpt["grid_bounds_lo"], dtype=np.float64)
+        self.hi = np.asarray(ckpt["grid_bounds_hi"], dtype=np.float64)
+
+        self.model = PoseCNN(num_classes=len(self.labels), grid_size=self.grid_size)
+        self.model.load_state_dict(ckpt["model_state_dict"])
+        self.model.eval()
+        print(self.labels)
+
+    def rasterize(self, yz_points: np.ndarray) -> np.ndarray:
+        hist, _, _ = np.histogram2d(
+            yz_points[:, 0], yz_points[:, 1],
+            bins=self.grid_size,
+            range=[[self.lo[0], self.hi[0]], [self.lo[1], self.hi[1]]],
+        )
+        if hist.sum() > 0:
+            hist = hist / hist.sum()
+        return hist.astype(np.float32)
+
+    def predict(self, points: NDArray[np.floating]):
+        print(points.shape)
+        yz_points = points[:, 1:3]
+        grid = self.rasterize(yz_points)
+        tensor = torch.from_numpy(grid).unsqueeze(0).unsqueeze(0).float()  # (1, 1, H, W)
+        with torch.no_grad():
+            logits = self.model(tensor)
+            probs = torch.softmax(logits, dim=1)[0]
+        return _result_from_probabilities(self.labels, probs)
 
 class MockPosePredictor:
     """Deterministic fallback predictor for UI/backend smoke tests.
@@ -85,7 +150,7 @@ def load_predictor(
     path: Optional[Union[str, Path]] = None,
     *,
     labels: Sequence[str] = DEFAULT_POSE_LABELS,
-) -> MockPosePredictor:
+) -> MockPosePredictor | PoseClassifier:
     """Load the active predictor for the backend.
 
     For now, no real model loader is implemented. If no path is provided, the
@@ -100,6 +165,8 @@ def load_predictor(
     if not model_path.exists():
         return MockPosePredictor(labels)
 
-    raise NotImplementedError(
-        f"Model loading is not implemented yet. Requested model file: {model_path}"
-    )
+    return PoseClassifier(model_path)
+
+    # raise NotImplementedError(
+    #     f"Model loading is not implemented yet. Requested model file: {model_path}"
+    # )

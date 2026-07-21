@@ -50,7 +50,7 @@ def _model_path() -> Path | None:
     predictor. Real model loading is intentionally not part of this stage.
     """
 
-    raw_path = os.getenv("MMYOGA_MODEL_FILE")
+    raw_path = "pose_classifier.pt"
     return Path(raw_path) if raw_path else None
 
 

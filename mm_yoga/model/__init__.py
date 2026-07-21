@@ -2,6 +2,7 @@
 
 from .inference import (
     DEFAULT_POSE_LABELS,
+    PoseClassifier,
     MockPosePredictor,
     PredictionResult,
     load_predictor,
@@ -9,6 +10,7 @@ from .inference import (
 
 __all__ = [
     "DEFAULT_POSE_LABELS",
+    "PoseClassifier"
     "MockPosePredictor",
     "PredictionResult",
     "load_predictor",
