@@ -7,7 +7,7 @@ import argparse
 from typing import Optional
 import struct
 
-from PyQt6.QtCore import QTimer
+
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout
 from PyQt6.QtGui import QFont, QImage
 import pyqtgraph.opengl as gl

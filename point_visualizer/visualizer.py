@@ -6,6 +6,7 @@ from pathlib import Path
 import argparse
 from typing import Optional
 import struct
+import threading
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout
@@ -276,6 +277,7 @@ def main() -> int:
     args = parse_args()
     path = args.path
 
+    exit_event = threading.Event()
     app = QApplication(sys.argv)
 
     dat_reader = DatReader(path)
@@ -288,7 +290,7 @@ def main() -> int:
         current_tick_us = 0
         current_points = np.array([])
         # Set number of points to accumulate
-        max_points = 100
+        max_points = 200
         # Base image
         try:
             for d in dat_reader.nextFrame():
@@ -313,22 +315,26 @@ def main() -> int:
                 diff_tick_us = new_tick_us - current_tick_us
                 current_tick_us = new_tick_us
                 time.sleep(diff_tick_us / 1e6)
-            print("Finished")                    
+            print("Finished") 
+            exit_event.set()                   
         except KeyboardInterrupt:
             print("Interupted")
             app.quit()
+            exit_event.set()
             return
         return
 
-    QTimer.singleShot(50, accumulated_data_plot)
-
+    plotting_thread = threading.Thread(target=accumulated_data_plot, args=())
+    plotting_thread.start()
     try:
         print("Running")
         app.exec()
+        exit_event.wait()
     except KeyboardInterrupt:
         print("Interupted")
         app.quit()
         pass
+    plotting_thread.join()
     return 0
 
 
