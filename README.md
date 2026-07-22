@@ -11,6 +11,7 @@ Implemented now:
 - FastAPI backend with REST and WebSocket endpoints.
 - Streaming parser for the team's Zstandard-compressed `.dat` recording format.
 - Replay mode for real radar point-cloud data.
+- Preliminary CNN pose classification from `pose_classifier.pt`.
 - Mock mode for frontend/backend smoke tests when replay data is unavailable.
 - React + Vite dashboard with:
   - current pose panel,
@@ -19,11 +20,12 @@ Implemented now:
   - replay/mock input controls,
   - compact status strip.
 
-Important limitation:
+Important limitations:
 
 - Radar points in replay mode are real parsed `.dat` data.
-- Pose predictions are still produced by a deterministic mock predictor.
-- No final trained model is connected yet.
+- Replay predictions use the preliminary trained model; mock mode remains synthetic.
+- Live radar input is not connected yet.
+- The checkpoint still needs evaluation on outlier recordings such as `t_pose_1_1`.
 
 ## Project Structure
 
@@ -37,7 +39,7 @@ RadarBodyMesh/
       parser.py                 # Streaming .dat parser
       preprocess.py             # Replay filtering, feature shaping, JSON point conversion
     model/
-      inference.py              # Predictor interface and mock predictor
+      inference.py              # CNN checkpoint loader and mock predictor
     backend/
       app.py                    # FastAPI REST/WebSocket app
       replay.py                 # Replay stream -> dashboard message conversion
@@ -104,7 +106,7 @@ WS   /ws/predictions?source=replay&replay_file=<path>
 Source modes:
 
 - `mock`: generated point cloud and mock prediction.
-- `replay`: parsed `.dat` radar replay and mock prediction.
+- `replay`: parsed `.dat` radar replay and CNN prediction.
 - `auto`: replay if available, otherwise mock.
 
 Environment variables:
@@ -112,10 +114,19 @@ Environment variables:
 ```bash
 MMYOGA_REPLAY_FILE=/path/to/file.dat
 MMYOGA_PLAYBACK_SPEED=1.0
-MMYOGA_MODEL_FILE=/path/to/model.file
+MMYOGA_MODEL_FILE=/path/to/pose_classifier.pt
 ```
 
-`MMYOGA_MODEL_FILE` is reserved for a future model. At this stage, model loading is not implemented and predictions remain mock.
+The backend uses `pose_classifier.pt` by default. If the configured checkpoint
+does not exist, it falls back to the deterministic mock predictor.
+
+### Replay Model Preprocessing
+
+Replay inference mirrors `point_visualizer/visualizer_with_classifier.py`: radar
+points use the same subject ROI, each frame is centered at the origin, and the
+classifier runs after at least 100 real points have accumulated. No zero-padding
+is added to CNN input. Display points are processed separately, so positioning
+the browser point cloud does not change the data received by the model.
 
 ## Frontend
 
@@ -166,14 +177,15 @@ Example WebSocket message:
   "timestamp_ms": 12345,
   "source": "replay",
   "prediction": {
-    "label": "straight_pose",
+    "label": "standing_pose",
     "confidence": 0.89,
     "probabilities": {
       "t_pose": 0.03,
-      "straight_pose": 0.89,
-      "warrior_pose": 0.04,
+      "standing_pose": 0.89,
+      "warrior_1_pose": 0.02,
+      "warrior_2_pose": 0.02,
       "angle_pose": 0.02,
-      "other_pose": 0.02
+      "other": 0.02
     }
   },
   "points": [
@@ -203,24 +215,32 @@ The dashboard currently supports three radar display modes:
 - `Filtered`: filtered radar points with xyz preserved.
 - `Raw`: raw radar points from the replay file.
 
+For replay messages, `metrics.fps` is the radar frame rate calculated from a
+rolling window of recorded timestamps. `metrics.latency_ms` is the most recent
+CNN inference time measured in the backend; it is not network round-trip
+latency. The point count shown in the status strip is the number of points in
+the currently selected display mode.
+
 ## Pose Labels
 
-Current dashboard/model labels use the current 5-class pose plan:
+Current dashboard/model labels use the six classes stored in the checkpoint:
 
 ```text
 t_pose
-straight_pose
-warrior_pose
+standing_pose
+warrior_1_pose
+warrior_2_pose
 angle_pose
-other_pose
+other
 ```
 
 Use these exact snake_case keys for dataset metadata, backend predictions, and
 future model outputs. They match the current collection plan:
 
 - T pose
-- Straight pose
-- Warrior pose
+- Standing pose
+- Right warrior pose
+- Left warrior pose
 - Angle pose
 - Other or unrelated poses
 
