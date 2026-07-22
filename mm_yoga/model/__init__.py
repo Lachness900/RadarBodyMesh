@@ -10,7 +10,7 @@ from .inference import (
 
 __all__ = [
     "DEFAULT_POSE_LABELS",
-    "PoseClassifier"
+    "PoseClassifier",
     "MockPosePredictor",
     "PredictionResult",
     "load_predictor",

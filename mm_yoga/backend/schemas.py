@@ -17,7 +17,7 @@ class PredictionPayload:
 
 @dataclass(frozen=True)
 class MetricsPayload:
-    """Runtime metrics shown in the dashboard status strip."""
+    """Recorded radar FPS and latest backend model-inference latency."""
 
     fps: float
     latency_ms: float

@@ -7,3 +7,4 @@ zstandard
 fastapi
 uvicorn[standard]
 pyvirtualcam
+torch

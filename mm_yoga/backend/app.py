@@ -44,13 +44,9 @@ app.add_middleware(
 
 
 def _model_path() -> Path | None:
-    """Optional future model file path.
+    """Configured model checkpoint, defaulting to the repository checkpoint."""
 
-    If this is unset, ``load_predictor`` returns the deterministic mock
-    predictor. Real model loading is intentionally not part of this stage.
-    """
-
-    raw_path = "pose_classifier.pt"
+    raw_path = os.getenv("MMYOGA_MODEL_FILE", "pose_classifier.pt")
     return Path(raw_path) if raw_path else None
 
 

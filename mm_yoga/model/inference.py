@@ -1,10 +1,4 @@
-"""Prediction helpers used by the replay backend.
-
-There is intentionally no trained model implementation in this stage. The
-backend exposes a small predictor interface and a deterministic mock predictor
-so the frontend and replay pipeline can be tested before the final trained
-model exists.
-"""
+"""Pose-classifier and mock prediction helpers used by the replay backend."""
 
 from __future__ import annotations
 
@@ -21,10 +15,11 @@ import torch.nn as nn
 
 DEFAULT_POSE_LABELS = [
     "t_pose",
-    "straight_pose",
-    "warrior_pose",
+    "standing_pose",
+    "warrior_1_pose",
+    "warrior_2_pose",
     "angle_pose",
-    "other_pose",
+    "other",
 ]
 
 
@@ -35,6 +30,7 @@ class PredictionResult:
     label: str
     confidence: float
     probabilities: dict[str, float]
+
 
 class PoseCNN(nn.Module):
     def __init__(self, num_classes: int, grid_size: int):
@@ -67,6 +63,8 @@ class PoseCNN(nn.Module):
 
 
 class PoseClassifier:
+    """Load and run the CNN checkpoint trained from Y-Z radar histograms."""
+
     def __init__(self, checkpoint_path: Path):
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         self.labels = list(ckpt["label_names"])
@@ -77,7 +75,6 @@ class PoseClassifier:
         self.model = PoseCNN(num_classes=len(self.labels), grid_size=self.grid_size)
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.model.eval()
-        print(self.labels)
 
     def rasterize(self, yz_points: np.ndarray) -> np.ndarray:
         hist, _, _ = np.histogram2d(
@@ -89,8 +86,9 @@ class PoseClassifier:
             hist = hist / hist.sum()
         return hist.astype(np.float32)
 
-    def predict(self, points: NDArray[np.floating]):
-        print(points.shape)
+    def predict(self, points: NDArray[np.floating]) -> PredictionResult:
+        """Predict from variable-length xyz points using their Y-Z projection."""
+
         yz_points = points[:, 1:3]
         grid = self.rasterize(yz_points)
         tensor = torch.from_numpy(grid).unsqueeze(0).unsqueeze(0).float()  # (1, 1, H, W)
@@ -98,6 +96,7 @@ class PoseClassifier:
             logits = self.model(tensor)
             probs = torch.softmax(logits, dim=1)[0]
         return _result_from_probabilities(self.labels, probs)
+
 
 class MockPosePredictor:
     """Deterministic fallback predictor for UI/backend smoke tests.
@@ -151,12 +150,7 @@ def load_predictor(
     *,
     labels: Sequence[str] = DEFAULT_POSE_LABELS,
 ) -> MockPosePredictor | PoseClassifier:
-    """Load the active predictor for the backend.
-
-    For now, no real model loader is implemented. If no path is provided, the
-    deterministic mock predictor is returned. When the final model is ready,
-    this function is the narrow place where the team can connect it.
-    """
+    """Load a trained checkpoint, falling back to mock output if unavailable."""
 
     if path is None:
         return MockPosePredictor(labels)
@@ -166,7 +160,3 @@ def load_predictor(
         return MockPosePredictor(labels)
 
     return PoseClassifier(model_path)
-
-    # raise NotImplementedError(
-    #     f"Model loading is not implemented yet. Requested model file: {model_path}"
-    # )
