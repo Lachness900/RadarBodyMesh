@@ -13,7 +13,7 @@ export function buildPredictionWsUrl({ source, replayFile }) {
 
 export const POSES = [
   { key: "t_pose", label: "T Pose", color: "#1ae1e4" },
-  { key: "standing_pose", label: "Straight Pose", color: "#2f6fbb" },
+  { key: "standing_pose", label: "Standing Pose", color: "#2f6fbb" },
   { key: "warrior_1_pose", label: "Right Warrior Pose", color: "#e4572e" },
   { key: "warrior_2_pose", label: "Left Warrior Pose", color: "#7ae42e" },
   { key: "angle_pose", label: "Angle Pose", color: "#f1ea16" },

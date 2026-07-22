@@ -52,7 +52,9 @@ h1 {
 }
 
 .timestamp {
-  min-width: 88px;
+  min-width: 100px;
+  display: grid;
+  gap: 2px;
   padding: 10px 14px;
   border: 1px solid rgba(34, 40, 56, 0.16);
   border-radius: 8px;
@@ -60,6 +62,17 @@ h1 {
   color: #2a324b;
   font-weight: 800;
   text-align: center;
+}
+
+.timestamp span {
+  color: #718081;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.timestamp strong {
+  font-size: 1rem;
 }
 
 .dashboard-grid {

@@ -6,15 +6,20 @@ function fileLabel(path) {
 export function StatusStrip({ message, pointCount, selection, status }) {
   const source = message?.source || "mock";
   const metrics = message?.metrics || {};
-  const fpsLabel = source === "mock" ? "mock fps" : "replay fps";
+  const fps = Number(metrics.fps) || 0;
+  const inferenceLatency = Number(metrics.latency_ms) || 0;
+  const fpsLabel = source === "mock" ? "mock fps" : "radar fps";
   const connectionLabel =
     status === "mock" ? (source === "mock" ? "local mock" : "connected") : status;
   const items = [
     connectionLabel,
     source,
-    ...(selection?.source === "replay" ? [fileLabel(selection?.replayFile)] : []),
-    `${(metrics.fps || 0).toFixed(1)} ${fpsLabel}`,
-    `${pointCount} points`,
+    ...(source === "replay" && selection?.source === "replay"
+      ? [fileLabel(selection?.replayFile)]
+      : []),
+    `${fps.toFixed(1)} ${fpsLabel}`,
+    ...(source === "replay" ? [`${inferenceLatency.toFixed(1)} ms inference`] : []),
+    `${pointCount} displayed points`,
   ];
 
   return (

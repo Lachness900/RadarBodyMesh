@@ -22,6 +22,7 @@ export default function App() {
     const timestamp = message?.timestamp_ms || 0;
     return `${(timestamp / 1000).toFixed(1)}s`;
   }, [message]);
+  const timestampLabel = message?.source === "replay" ? "Replay time" : "Mock time";
   const pointView = useMemo(() => {
     const pointSets = message.point_sets || {};
     const selected = pointSets[pointMode] || message.points || [];
@@ -69,7 +70,10 @@ export default function App() {
           <div className="eyebrow">mmWave Pose Matching</div>
           <h1>mmYoga</h1>
         </div>
-        <div className="timestamp">{updatedAt}</div>
+        <div className="timestamp">
+          <span>{timestampLabel}</span>
+          <strong>{updatedAt}</strong>
+        </div>
       </header>
 
       <div className="dashboard-grid">
