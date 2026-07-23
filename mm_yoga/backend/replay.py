@@ -27,6 +27,9 @@ from mm_yoga.model.inference import (
 
 CLASSIFIER_RADAR_BOUNDS: Bounds3D = ((2.0, 4.0), (-1.0, 2.0), (-1.5, 1.5))
 CLASSIFIER_BATCH_POINTS = 100
+Y_SPLIT = -0.7
+UPPER_BATCH_POINTS = 60
+LOWER_BATCH_POINTS = 40
 
 
 def build_message(
@@ -161,6 +164,13 @@ def _append_recent_points(
         return points[-limit:]
     return np.concatenate([current, points], axis=0)[-limit:]
 
+def split_points(
+        points: np.ndarray,
+        y_split: float
+) -> tuple[np.ndarray, np.ndarray]:
+    upper_points = [point for point in points if point[2] >= y_split]
+    lower_points = [point for point in points if point[2] < y_split]
+    return upper_points, lower_points
 
 def iter_replay_messages(
     replay_file: Union[str, Path],
@@ -183,7 +193,9 @@ def iter_replay_messages(
     #   its wider ROI is centered at the origin and consumed in 100-point batches.
     raw_history = np.empty((0, 3), dtype=np.float64)
     display_history = np.empty((0, 3), dtype=np.float64)
-    classifier_pending = np.empty((0, 3), dtype=np.float64)
+    lower_classifier_pending = np.empty((0, 3), dtype=np.float64)
+    upper_classifier_pending = np.empty((0, 3), dtype=np.float64)
+    
     last_prediction: Optional[PredictionResult] = None
     last_inference_latency_ms = 0.0
     frame_intervals_us: deque[int] = deque(maxlen=10)
@@ -197,26 +209,23 @@ def iter_replay_messages(
             filter_points(frame.points, bounds=CLASSIFIER_RADAR_BOUNDS),
             target_z=0.0,
         )
+        upper_classifier_points, lower_classifier_points = split_points(classifier_points, Y_SPLIT)
         raw_history = _append_recent_points(raw_history, frame.points, limit=256)
         display_history = _append_recent_points(
             display_history,
             display_points,
             limit=128,
         )
-        if len(classifier_points):
-            classifier_pending = np.concatenate(
-                [classifier_pending, classifier_points],
-                axis=0,
-            )
-
-        if len(classifier_pending) >= CLASSIFIER_BATCH_POINTS:
-            # Match visualizer_with_classifier.py: classify all points currently
-            # accumulated, then consume exactly one 100-point batch.
+        lower_size = len(lower_classifier_pending) + len(lower_classifier_points)
+        upper_size = len(upper_classifier_pending) + len(upper_classifier_points)
+        upper_classifier_pending = _append_recent_points(upper_classifier_pending, upper_classifier_points, limit=UPPER_BATCH_POINTS)
+        lower_classifier_points = _append_recent_points(lower_classifier_pending, lower_classifier_points, limit=LOWER_BATCH_POINTS)
+        if lower_size > LOWER_BATCH_POINTS or upper_size > UPPER_BATCH_POINTS: # If either need to be update, update everything
+            classifier_pending = np.concatenate([upper_classifier_pending, lower_classifier_points], axis=0)
             last_prediction, last_inference_latency_ms = _predict_points(
                 predictor,
                 classifier_pending,
             )
-            classifier_pending = classifier_pending[CLASSIFIER_BATCH_POINTS:]
 
         projected_radar = _projected_radar_points(display_history[-100:])
         if previous_timestamp_us is None:

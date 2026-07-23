@@ -277,7 +277,7 @@ def split_points(
         points: np.ndarray,
         y_split: float
 ) -> tuple[NDArray, NDArray]:
-    upper_points = [point for point in points if point[2] > y_split]
+    upper_points = [point for point in points if point[2] >= y_split]
     lower_points = [point for point in points if point[2] < y_split]
     return upper_points, lower_points
 
@@ -331,6 +331,7 @@ def main() -> int:
                     lower_points = append_recent_points(lower_points, lower_data, max_lower_points)
                     if lower_size > max_lower_points or upper_size > max_upper_points: # If either need to be update, update everything
                         points = np.concatenate([upper_points, lower_points], axis=0)
+                        points[:,0] = 0
                         plotter.update_data(data2=points)
                         QApplication.processEvents()               
                 elif msg_type == 1:
