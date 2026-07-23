@@ -273,6 +273,27 @@ def center_data(
     radar_points[:, 2] = radar_points[:, 2] - total_point[2]/len(points)
     return radar_points
 
+def split_points(
+        points: np.ndarray,
+        y_split: float
+) -> tuple[NDArray, NDArray]:
+    upper_points = [point for point in points if point[2] > y_split]
+    lower_points = [point for point in points if point[2] < y_split]
+    return upper_points, lower_points
+
+def append_recent_points(
+    current: np.ndarray,
+    new_points: np.ndarray,
+    limit: int,
+) -> np.ndarray:
+    points = np.asarray(new_points, dtype=np.float64)
+    if points.size == 0:
+        return current
+    points = points[:, :3]
+    if current.size == 0:
+        return points[-limit:]
+    return np.concatenate([current, points], axis=0)[-limit:]
+
 def main() -> int:
     args = parse_args()
     path = args.path
@@ -288,9 +309,13 @@ def main() -> int:
         nonlocal dat_reader
         nonlocal plotter
         current_tick_us = 0
-        current_points = np.array([])
+        upper_points = np.empty(shape=(0,3))
+        lower_points = np.empty(shape=(0,3))
         # Set number of points to accumulate
-        max_points = 200
+        max_upper_points = 60
+        max_lower_points = 40
+        y_split = -0.7
+
         # Base image
         try:
             for d in dat_reader.nextFrame():
@@ -299,14 +324,14 @@ def main() -> int:
                 new_tick_us = d["timestamp_us"]
 
                 if msg_type == 2:
-                    data = center_data(filter_data(msg))
-                    saved_points = len(current_points) + len(data)
-                    current_points = np.append(current_points, data).reshape(-1, 3)
-                    if saved_points >= max_points:
-                        points = current_points
-                        points[:, 0] = 0
+                    upper_data, lower_data = split_points(center_data(filter_data(msg)), y_split)
+                    lower_size = len(lower_points) + len(lower_data)
+                    upper_size = len(upper_points) + len(upper_data)
+                    upper_points = append_recent_points(upper_points, upper_data, max_upper_points)
+                    lower_points = append_recent_points(lower_points, lower_data, max_lower_points)
+                    if lower_size > max_lower_points or upper_size > max_upper_points: # If either need to be update, update everything
+                        points = np.concatenate([upper_points, lower_points], axis=0)
                         plotter.update_data(data2=points)
-                        current_points = current_points[max_points:]
                         QApplication.processEvents()               
                 elif msg_type == 1:
                     plotter.update_data(data1=msg)
