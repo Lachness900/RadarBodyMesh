@@ -16,6 +16,7 @@ Implemented now:
 - React + Vite dashboard with:
   - current pose panel,
   - pose confidence bars,
+  - interactive SMPL T-pose reference viewer,
   - Three.js radar point-cloud view,
   - replay/mock input controls,
   - compact status strip.
@@ -26,6 +27,7 @@ Important limitations:
 - Replay predictions use the preliminary trained model; mock mode remains synthetic.
 - Live radar input is not connected yet.
 - The checkpoint still needs evaluation on outlier recordings such as `t_pose_1_1`.
+- The SMPL reference viewer currently includes T Pose only.
 
 ## Project Structure
 
@@ -47,6 +49,8 @@ RadarBodyMesh/
   frontend/
     src/                        # React dashboard source
     package.json                # Frontend scripts and dependencies
+  tools/
+    smpl_reference/             # Offline SMPL T-pose GLB exporter
   OneDrive/                     # Local downloaded data, ignored by Git
   data/replay/                  # Uploaded replay files, ignored by Git
   models/                       # Local model artifacts, ignored by Git
@@ -72,6 +76,22 @@ data/replay/uploads/
 ```
 
 That directory is also ignored by Git.
+
+## SMPL Reference Pose
+
+The Current Pose panel can display an interactive SMPL reference when the
+prediction is `t_pose`. Generate the local GLB before starting Vite:
+
+```bash
+.venv/bin/python tools/smpl_reference/generate_reference_pose.py \
+  --model male \
+  --output frontend/public/reference-poses/t_pose_male.glb
+```
+
+The GLB and source `.pkl` files remain ignored by Git. The viewer supports
+rotation, zoom, pan, and view reset. It is a standard pose reference, not a body
+mesh reconstructed from radar data. Other pose references have not been added
+yet.
 
 ## Backend
 
@@ -239,8 +259,8 @@ future model outputs. They match the current collection plan:
 
 - T pose
 - Standing pose
-- Right warrior pose
-- Left warrior pose
+- Warrior Pose 1
+- Warrior Pose 2
 - Angle pose
 - Other or unrelated poses
 

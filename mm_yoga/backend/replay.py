@@ -197,6 +197,7 @@ def iter_replay_messages(
     upper_classifier_pending = np.empty((0, 3), dtype=np.float64)
     
     last_prediction: Optional[PredictionResult] = None
+    prediction: Optional[PredictionResult] = None
     last_inference_latency_ms = 0.0
     frame_intervals_us: deque[int] = deque(maxlen=10)
     reader = DatFrameReader(replay_file)
@@ -222,7 +223,7 @@ def iter_replay_messages(
         lower_classifier_points = _append_recent_points(lower_classifier_pending, lower_classifier_points, limit=LOWER_BATCH_POINTS)
         if lower_size > LOWER_BATCH_POINTS or upper_size > UPPER_BATCH_POINTS: # If either need to be update, update everything
             classifier_pending = np.concatenate([upper_classifier_pending, lower_classifier_points], axis=0)
-            last_prediction, last_inference_latency_ms = _predict_points(
+            prediction, last_inference_latency_ms = _predict_points(
                 predictor,
                 classifier_pending,
             )
@@ -239,9 +240,19 @@ def iter_replay_messages(
         previous_timestamp_us = frame.timestamp_us
 
         # Do not invent a padded prediction while the first real batch warms up.
-        if last_prediction is None:
+        if prediction is None:
             continue
-
+        elif last_prediction is None:
+            last_prediction = prediction
+        else:
+            new_confidence = 0
+            for label in prediction.probabilities.keys():
+                last_prediction.probabilities[label] = prediction.probabilities[label]*0.2 + last_prediction.probabilities[label]*0.8
+                if last_prediction.probabilities[label] > new_confidence:
+                    last_prediction.label = label
+                    last_prediction.confidence = last_prediction.probabilities[label]
+                    new_confidence = last_prediction.confidence
+        
         yield build_message(
             timestamp_ms=frame.timestamp_ms,
             source="replay",
