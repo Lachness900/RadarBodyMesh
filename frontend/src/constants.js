@@ -19,3 +19,9 @@ export const POSES = [
   { key: "angle_pose", label: "Angle Pose", color: "#f1ea16" },
   { key: "other", label: "Other Pose", color: "#6c5b7b" },
 ];
+
+// Stage one includes only the canonical SMPL T Pose. Other labels deliberately
+// remain unmapped until their reference poses have been reviewed by the team.
+export const REFERENCE_POSES = {
+  t_pose: "/reference-poses/t_pose_male.glb",
+};

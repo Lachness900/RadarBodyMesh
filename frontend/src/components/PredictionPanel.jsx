@@ -1,4 +1,5 @@
-import { POSES } from "../constants";
+import { POSES, REFERENCE_POSES } from "../constants";
+import { ReferencePoseViewer } from "./ReferencePoseViewer";
 
 function getPoseMeta(label) {
   return POSES.find((pose) => pose.key === label) || {
@@ -13,6 +14,7 @@ export function PredictionPanel({ prediction }) {
   const pose = getPoseMeta(prediction?.label || "unknown");
   const poseLabel = pose.label;
   const isLongPose = poseLabel.length > 9;
+  const referenceAsset = REFERENCE_POSES[pose.key];
 
   return (
     <section className="panel prediction-panel">
@@ -21,6 +23,7 @@ export function PredictionPanel({ prediction }) {
         <div className={isLongPose ? "pose-name long" : "pose-name"} title={poseLabel}>
           {poseLabel}
         </div>
+        <ReferencePoseViewer assetUrl={referenceAsset} poseLabel={poseLabel} />
         <div
           className="confidence-ring"
           style={{ "--pose-color": pose.color, "--value": `${confidence}%` }}
