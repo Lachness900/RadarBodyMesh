@@ -23,7 +23,7 @@ DEFAULT_POSE_LABELS = [
 ]
 
 
-@dataclass(frozen=True)
+@dataclass
 class PredictionResult:
     """Pose prediction result returned by any backend predictor."""
 
