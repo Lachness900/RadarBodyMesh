@@ -184,7 +184,8 @@ def iter_replay_messages(
     raw_history = np.empty((0, 3), dtype=np.float64)
     display_history = np.empty((0, 3), dtype=np.float64)
     classifier_pending = np.empty((0, 3), dtype=np.float64)
-    last_prediction: Optional[PredictionResult] = None
+    last_prediction: PredictionResult | None = None
+    prediction: PredictionResult | None = None
     last_inference_latency_ms = 0.0
     frame_intervals_us: deque[int] = deque(maxlen=10)
     reader = DatFrameReader(replay_file)
@@ -212,10 +213,11 @@ def iter_replay_messages(
         if len(classifier_pending) >= CLASSIFIER_BATCH_POINTS:
             # Match visualizer_with_classifier.py: classify all points currently
             # accumulated, then consume exactly one 100-point batch.
-            last_prediction, last_inference_latency_ms = _predict_points(
+            prediction, last_inference_latency_ms = _predict_points(
                 predictor,
                 classifier_pending,
             )
+
             classifier_pending = classifier_pending[CLASSIFIER_BATCH_POINTS:]
 
         projected_radar = _projected_radar_points(display_history[-100:])
@@ -230,9 +232,19 @@ def iter_replay_messages(
         previous_timestamp_us = frame.timestamp_us
 
         # Do not invent a padded prediction while the first real batch warms up.
-        if last_prediction is None:
+        if prediction is None:
             continue
-
+        elif last_prediction is None:
+            last_prediction = prediction
+        else:
+            new_confidence = 0
+            for label in prediction.probabilities.keys():
+                last_prediction.probabilities[label] = prediction.probabilities[label]*0.2 + last_prediction.probabilities[label]*0.8
+                if last_prediction.probabilities[label] > new_confidence:
+                    last_prediction.label = label
+                    last_prediction.confidence = last_prediction.probabilities[label]
+                    new_confidence = last_prediction.confidence
+        
         yield build_message(
             timestamp_ms=frame.timestamp_ms,
             source="replay",
