@@ -1,6 +1,7 @@
 export const WS_URL =
   import.meta.env.VITE_MMYOGA_WS_URL || "ws://localhost:8000/ws/predictions";
 export const API_URL = import.meta.env.VITE_MMYOGA_API_URL || "http://localhost:8000";
+const REFERENCE_POSE_ROOT = `${import.meta.env.BASE_URL}reference-poses`;
 
 export function buildPredictionWsUrl({ source, replayFile }) {
   const url = new URL(WS_URL);
@@ -23,5 +24,5 @@ export const POSES = [
 // Stage one includes only the canonical SMPL T Pose. Other labels deliberately
 // remain unmapped until their reference poses have been reviewed by the team.
 export const REFERENCE_POSES = {
-  t_pose: "/reference-poses/t_pose_male.glb",
+  t_pose: `${REFERENCE_POSE_ROOT}/t_pose_male.glb`,
 };

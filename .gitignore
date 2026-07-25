@@ -27,6 +27,7 @@ models/*
 frontend/node_modules/
 frontend/dist/
 frontend/public/reference-poses/*.glb
+!frontend/public/reference-poses/t_pose_male.glb
 
 # macOS
 .DS_Store
