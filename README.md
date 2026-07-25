@@ -79,8 +79,11 @@ That directory is also ignored by Git.
 
 ## SMPL Reference Pose
 
-The Current Pose panel can display an interactive SMPL reference when the
-prediction is `t_pose`. Generate the local GLB before starting Vite:
+The Current Pose panel includes an interactive reference when the prediction is
+`t_pose`. Its GLB is tracked at
+`frontend/public/reference-poses/t_pose_male.glb`, so it works immediately after
+cloning or pulling the repository. No local SMPL installation is required to
+use it. To regenerate the asset intentionally:
 
 ```bash
 .venv/bin/python tools/smpl_reference/generate_reference_pose.py \
@@ -88,7 +91,7 @@ prediction is `t_pose`. Generate the local GLB before starting Vite:
   --output frontend/public/reference-poses/t_pose_male.glb
 ```
 
-The GLB and source `.pkl` files remain ignored by Git. The viewer supports
+The source `.pkl` files remain ignored by Git. The viewer supports
 rotation, zoom, pan, and view reset. It is a standard pose reference, not a body
 mesh reconstructed from radar data. Other pose references have not been added
 yet.
