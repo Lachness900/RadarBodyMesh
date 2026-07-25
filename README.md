@@ -239,8 +239,8 @@ future model outputs. They match the current collection plan:
 
 - T pose
 - Standing pose
-- Right warrior pose
-- Left warrior pose
+- Warrior Pose 1
+- Warrior Pose 2
 - Angle pose
 - Other or unrelated poses
 
