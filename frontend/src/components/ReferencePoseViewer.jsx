@@ -80,33 +80,37 @@ function resetReferenceView(camera, controls, modelFrame) {
 
 export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
   const mountRef = useRef(null);
+  const sceneRef = useRef(null);
   const cameraRef = useRef(null);
   const controlsRef = useRef(null);
+  const loaderRef = useRef(null);
+  const loadedModelRef = useRef(null);
   const modelFrameRef = useRef(null);
+  const [rendererReady, setRendererReady] = useState(false);
   const [loadState, setLoadState] = useState(assetUrl ? "loading" : "unavailable");
 
+  // Create one WebGL context for the lifetime of the component. Pose changes
+  // replace only the GLB mesh, which avoids exhausting browser WebGL contexts.
   useEffect(() => {
-    if (!assetUrl) {
-      setLoadState("unavailable");
-      return undefined;
-    }
-
     const mount = mountRef.current;
     if (!mount) return undefined;
 
-    let disposed = false;
     let animationFrame = 0;
-    let loadedModel = null;
-
-    setLoadState("loading");
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#f8fafc");
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.01, 100);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+    } catch {
+      setLoadState("error");
+      return undefined;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -132,6 +136,7 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
     controls.enablePan = true;
     controls.screenSpacePanning = true;
     controlsRef.current = controls;
+    loaderRef.current = new GLTFLoader();
 
     const resize = () => {
       const rect = mount.getBoundingClientRect();
@@ -144,49 +149,86 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
     resizeObserver.observe(mount);
     resize();
 
-    const loader = new GLTFLoader();
-    loader.load(
-      assetUrl,
-      (gltf) => {
-        if (disposed) {
-          disposeModel(gltf.scene);
-          return;
-        }
-        loadedModel = gltf.scene;
-        loadedModel.name = `${poseLabel} Reference`;
-        scene.add(loadedModel);
-        modelFrameRef.current = centerModel(loadedModel);
-        resetReferenceView(camera, controls, modelFrameRef.current);
-        setLoadState("ready");
-      },
-      undefined,
-      () => {
-        if (!disposed) setLoadState("error");
-      },
-    );
-
     const animate = () => {
       controls.update();
       renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(animate);
     };
     animate();
+    setRendererReady(true);
 
     return () => {
-      disposed = true;
       window.cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
       controls.dispose();
-      disposeModel(loadedModel);
+      if (loadedModelRef.current) {
+        scene.remove(loadedModelRef.current);
+        disposeModel(loadedModelRef.current);
+      }
       grid.geometry.dispose();
       disposeMaterial(grid.material);
       renderer.dispose();
+      renderer.forceContextLoss();
       renderer.domElement.remove();
+      sceneRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
+      loaderRef.current = null;
+      loadedModelRef.current = null;
       modelFrameRef.current = null;
     };
-  }, [assetUrl, poseLabel]);
+  }, []);
+
+  // Keep the renderer and controls alive while swapping only the pose mesh.
+  useEffect(() => {
+    if (!rendererReady) return undefined;
+
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const loader = loaderRef.current;
+    if (!scene || !camera || !controls || !loader) return undefined;
+
+    if (loadedModelRef.current) {
+      scene.remove(loadedModelRef.current);
+      disposeModel(loadedModelRef.current);
+      loadedModelRef.current = null;
+      modelFrameRef.current = null;
+    }
+
+    if (!assetUrl) {
+      setLoadState("unavailable");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setLoadState("loading");
+    loader.load(
+      assetUrl,
+      (gltf) => {
+        if (cancelled) {
+          disposeModel(gltf.scene);
+          return;
+        }
+
+        const model = gltf.scene;
+        model.name = `${poseLabel} Reference`;
+        scene.add(model);
+        loadedModelRef.current = model;
+        modelFrameRef.current = centerModel(model);
+        resetReferenceView(camera, controls, modelFrameRef.current);
+        setLoadState("ready");
+      },
+      undefined,
+      () => {
+        if (!cancelled) setLoadState("error");
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assetUrl, poseLabel, rendererReady]);
 
   const resetView = () => {
     resetReferenceView(
@@ -195,15 +237,6 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
       modelFrameRef.current,
     );
   };
-
-  if (!assetUrl) {
-    return (
-      <div className="reference-viewer reference-unavailable">
-        <div className="reference-viewer-label">Reference Pose</div>
-        <span>{emptyLabel}</span>
-      </div>
-    );
-  }
 
   return (
     <div className="reference-viewer">
@@ -221,11 +254,17 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
       <div
         ref={mountRef}
         className="reference-pose-scene"
-        aria-label={`Interactive ${poseLabel} reference model`}
+        aria-label={
+          assetUrl ? `Interactive ${poseLabel} reference model` : emptyLabel
+        }
       />
       {loadState !== "ready" && (
         <div className={`reference-load-state ${loadState}`}>
-          {loadState === "error" ? "Reference unavailable" : "Loading reference"}
+          {loadState === "error"
+            ? "Reference unavailable"
+            : loadState === "unavailable"
+              ? emptyLabel
+              : "Loading reference"}
         </div>
       )}
     </div>

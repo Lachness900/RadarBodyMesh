@@ -228,18 +228,8 @@ h1 {
   color: #b64029;
 }
 
-.reference-unavailable {
-  display: grid;
-  place-items: center;
+.reference-load-state.unavailable {
   color: #7c898b;
-  font-size: 0.7rem;
-  font-weight: 750;
-}
-
-.reference-unavailable .reference-viewer-label {
-  position: absolute;
-  top: 10px;
-  left: 10px;
 }
 
 .bars {
