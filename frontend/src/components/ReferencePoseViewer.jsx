@@ -78,7 +78,7 @@ function resetReferenceView(camera, controls, modelFrame) {
   controls.saveState();
 }
 
-export function ReferencePoseViewer({ assetUrl, poseLabel }) {
+export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
   const mountRef = useRef(null);
   const cameraRef = useRef(null);
   const controlsRef = useRef(null);
@@ -200,7 +200,7 @@ export function ReferencePoseViewer({ assetUrl, poseLabel }) {
     return (
       <div className="reference-viewer reference-unavailable">
         <div className="reference-viewer-label">Reference Pose</div>
-        <span>Reference not available yet</span>
+        <span>{emptyLabel}</span>
       </div>
     );
   }

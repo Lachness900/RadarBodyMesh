@@ -8,3 +8,4 @@ fastapi
 uvicorn[standard]
 pyvirtualcam
 torch
+smplx==0.1.28

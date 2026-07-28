@@ -15,6 +15,8 @@ export function PredictionPanel({ prediction }) {
   const poseLabel = pose.label;
   const isLongPose = poseLabel.length > 9;
   const referenceAsset = REFERENCE_POSES[pose.key];
+  const emptyReferenceLabel =
+    pose.key === "other" ? "No standard reference" : "Reference not available yet";
 
   return (
     <section className="panel prediction-panel">
@@ -23,7 +25,11 @@ export function PredictionPanel({ prediction }) {
         <div className={isLongPose ? "pose-name long" : "pose-name"} title={poseLabel}>
           {poseLabel}
         </div>
-        <ReferencePoseViewer assetUrl={referenceAsset} poseLabel={poseLabel} />
+        <ReferencePoseViewer
+          assetUrl={referenceAsset}
+          emptyLabel={emptyReferenceLabel}
+          poseLabel={poseLabel}
+        />
         <div
           className="confidence-ring"
           style={{ "--pose-color": pose.color, "--value": `${confidence}%` }}

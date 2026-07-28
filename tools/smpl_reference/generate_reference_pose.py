@@ -1,8 +1,7 @@
-"""Export the canonical SMPL template as a local T-pose reference asset.
+"""Export the approved mmYoga poses as local SMPL reference assets.
 
-Phase one intentionally exports only ``v_template`` and ``f`` from a trusted
-SMPL pickle. It does not apply body shape parameters, joint rotations, or pose
-blend shapes. Those operations belong to the later multi-pose phase.
+The T-pose uses the canonical template directly. The remaining presets are
+generated with the official ``smplx`` linear blend skinning implementation.
 """
 
 from __future__ import annotations
@@ -18,6 +17,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from pose_presets import POSE_LABELS, get_pose_axis_angles
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL_DIR = REPO_ROOT / "OneDrive" / "SMPL_model"
@@ -25,18 +26,17 @@ DEFAULT_OUTPUT_DIR = REPO_ROOT / "data" / "smpl_reference"
 
 
 class _SparseMatrixPlaceholder:
-    """Accept an unused SciPy sparse matrix without importing SciPy.
+    """Load a SciPy sparse payload without importing SciPy.
 
     The provided SMPL pickle stores ``J_regressor`` as a SciPy CSC matrix.
-    Canonical T-pose export only needs ``v_template`` and ``f``, so importing
-    the sparse payload would add an unnecessary compiled dependency.
+    It is restored to a dense NumPy matrix only when a posed mesh needs it.
     """
 
     def __new__(cls, *_args: Any, **_kwargs: Any) -> "_SparseMatrixPlaceholder":
         return super().__new__(cls)
 
-    def __setstate__(self, _state: Any) -> None:
-        return None
+    def __setstate__(self, state: Any) -> None:
+        self.state = state
 
 
 class _TrustedSmplUnpickler(pickle.Unpickler):
@@ -64,10 +64,8 @@ class _TrustedSmplUnpickler(pickle.Unpickler):
         )
 
 
-def load_template_mesh(
-    model_path: Path,
-) -> tuple[NDArray[np.float64], NDArray[np.uint32]]:
-    """Load and validate the canonical vertices and triangle topology."""
+def load_smpl_data(model_path: Path) -> dict[str, Any]:
+    """Load one trusted SMPL data dictionary without importing SciPy."""
 
     if not model_path.is_file():
         raise FileNotFoundError(f"SMPL model not found: {model_path}")
@@ -77,11 +75,98 @@ def load_template_mesh(
 
     if not isinstance(model, dict):
         raise ValueError("Expected the SMPL pickle root to be a dictionary")
-    if "v_template" not in model or "f" not in model:
-        raise ValueError("SMPL pickle must contain v_template and f")
+    required = {
+        "J_regressor",
+        "f",
+        "kintree_table",
+        "posedirs",
+        "shapedirs",
+        "v_template",
+        "weights",
+    }
+    missing = required.difference(model)
+    if missing:
+        raise ValueError(f"SMPL pickle is missing: {', '.join(sorted(missing))}")
+    return model
+
+
+def _sparse_placeholder_to_dense(
+    sparse: _SparseMatrixPlaceholder,
+) -> NDArray[np.float64]:
+    """Restore the inspected CSC/CSR payload as a regular NumPy matrix."""
+
+    state = getattr(sparse, "state", None)
+    if not isinstance(state, dict):
+        raise ValueError("SMPL sparse matrix state is missing")
+
+    matrix_format = state.get("format")
+    shape = tuple(state.get("_shape", ()))
+    indptr = np.asarray(state.get("indptr"), dtype=np.int64)
+    indices = np.asarray(state.get("indices"), dtype=np.int64)
+    values = np.asarray(state.get("data"), dtype=np.float64)
+    if len(shape) != 2 or len(indices) != len(values):
+        raise ValueError("SMPL sparse matrix state is invalid")
+
+    dense = np.zeros(shape, dtype=np.float64)
+    if matrix_format == "csc":
+        for column in range(shape[1]):
+            start, end = int(indptr[column]), int(indptr[column + 1])
+            dense[indices[start:end], column] = values[start:end]
+        return dense
+    if matrix_format == "csr":
+        for row in range(shape[0]):
+            start, end = int(indptr[row]), int(indptr[row + 1])
+            dense[row, indices[start:end]] = values[start:end]
+        return dense
+    raise ValueError(f"Unsupported SMPL sparse matrix format: {matrix_format}")
+
+
+def generate_pose_mesh(
+    model: dict[str, Any],
+    pose_label: str,
+) -> tuple[NDArray[np.float64], NDArray[np.uint32]]:
+    """Generate one mesh, using official smplx LBS for non-zero poses."""
 
     vertices = np.asarray(model["v_template"], dtype=np.float64)
     faces = np.asarray(model["f"], dtype=np.uint32)
+
+    if pose_label != "t_pose":
+        try:
+            import torch
+            from smplx.lbs import lbs
+        except ImportError as error:
+            raise RuntimeError(
+                "Non-T presets require torch and smplx. "
+                "Install the project requirements first."
+            ) from error
+
+        joint_regressor = model["J_regressor"]
+        if isinstance(joint_regressor, _SparseMatrixPlaceholder):
+            joint_regressor = _sparse_placeholder_to_dense(joint_regressor)
+        joint_regressor = np.asarray(joint_regressor, dtype=np.float32)
+
+        shapedirs = np.asarray(model["shapedirs"], dtype=np.float32)
+        shapedirs = shapedirs[:, :, :10]
+        posedirs = np.asarray(model["posedirs"], dtype=np.float32)
+        posedirs = posedirs.reshape((-1, posedirs.shape[-1])).T
+        parents = np.asarray(model["kintree_table"][0], dtype=np.int64).copy()
+        parents[0] = -1
+
+        skinning_weights = np.asarray(model["weights"], dtype=np.float32)
+        full_pose = get_pose_axis_angles(pose_label).reshape((1, -1))
+        with torch.no_grad():
+            posed_vertices, _joints = lbs(
+                betas=torch.zeros((1, shapedirs.shape[-1]), dtype=torch.float32),
+                pose=torch.as_tensor(full_pose, dtype=torch.float32),
+                v_template=torch.as_tensor(vertices, dtype=torch.float32),
+                shapedirs=torch.as_tensor(shapedirs, dtype=torch.float32),
+                posedirs=torch.as_tensor(posedirs, dtype=torch.float32),
+                J_regressor=torch.as_tensor(joint_regressor, dtype=torch.float32),
+                parents=torch.as_tensor(parents, dtype=torch.long),
+                lbs_weights=torch.as_tensor(skinning_weights),
+                pose2rot=True,
+            )
+        vertices = posed_vertices[0].cpu().numpy().astype(np.float64)
 
     if vertices.ndim != 2 or vertices.shape[1] != 3:
         raise ValueError(f"Expected vertices shaped (N, 3), got {vertices.shape}")
@@ -131,6 +216,7 @@ def write_glb(
     vertices: NDArray[np.float64],
     faces: NDArray[np.uint32],
     source_model_name: str,
+    pose_label: str,
 ) -> None:
     """Write a dependency-free glTF 2.0 binary containing the static mesh."""
 
@@ -159,10 +245,10 @@ def write_glb(
         "scenes": [{"name": "SMPL Reference Pose", "nodes": [0]}],
         "nodes": [
             {
-                "name": "T Pose Reference",
+                "name": f"{pose_label} Reference",
                 "mesh": 0,
                 "extras": {
-                    "poseLabel": "t_pose",
+                    "poseLabel": pose_label,
                     "referenceOnly": True,
                     "sourceModel": source_model_name,
                 },
@@ -285,6 +371,7 @@ def render_preview(
     preview_path: Path,
     vertices: NDArray[np.float64],
     faces: NDArray[np.uint32],
+    pose_label: str,
 ) -> None:
     """Render front and side views for human approval of the reference pose."""
 
@@ -323,7 +410,8 @@ def render_preview(
         axis.set_title(title, fontsize=13, color="#34484b", pad=10)
         axis.set_axis_off()
 
-    fig.suptitle("SMPL T Pose Reference", fontsize=16, color="#172027")
+    title = pose_label.replace("_", " ").title()
+    fig.suptitle(f"SMPL {title} Reference", fontsize=16, color="#172027")
     fig.tight_layout()
     preview_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(preview_path, dpi=180, bbox_inches="tight")
@@ -346,13 +434,14 @@ def write_report(
     output_path: Path,
     vertices: NDArray[np.float64],
     faces: NDArray[np.uint32],
+    pose_label: str,
 ) -> None:
     """Record geometry checks without exposing the ignored source model path."""
 
     minimum = vertices.min(axis=0)
     maximum = vertices.max(axis=0)
     report = {
-        "pose_label": "t_pose",
+        "pose_label": pose_label,
         "reference_only": True,
         "source_model": model_path.name,
         "source_sha256": file_sha256(model_path),
@@ -374,13 +463,24 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line options for one local reference export."""
 
     parser = argparse.ArgumentParser(
-        description="Export the canonical SMPL template as a T-pose GLB."
+        description="Export reviewed mmYoga SMPL reference poses as GLB files."
     )
     parser.add_argument(
         "--model",
         choices=("male", "female"),
         default="male",
         help="Select smpl_m.pkl or smpl_f.pkl from OneDrive/SMPL_model.",
+    )
+    parser.add_argument(
+        "--pose",
+        choices=POSE_LABELS,
+        default="t_pose",
+        help="Select one reviewed project pose.",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Generate all reviewed reference poses.",
     )
     parser.add_argument(
         "--model-path",
@@ -390,7 +490,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        help="Override the generated GLB path.",
+        help="Override the generated GLB path when exporting one pose.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        help="Override the output directory, especially with --all.",
     )
     parser.add_argument(
         "--skip-preview",
@@ -401,37 +506,52 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Generate, validate, preview, and report one canonical T-pose asset."""
+    """Generate, validate, preview, and report the requested reference poses."""
 
     args = parse_args()
+    if args.all and args.output is not None:
+        raise ValueError("--output cannot be combined with --all; use --output-dir")
+
     suffix = "m" if args.model == "male" else "f"
     model_path = (
         args.model_path
         if args.model_path is not None
         else DEFAULT_MODEL_DIR / f"smpl_{suffix}.pkl"
     )
-    output_path = (
-        args.output
-        if args.output is not None
-        else DEFAULT_OUTPUT_DIR / f"t_pose_{args.model}.glb"
-    )
-    # Keep review-only artefacts out of frontend/public when --output points
-    # there. Vite only needs the GLB at runtime.
-    preview_path = DEFAULT_OUTPUT_DIR / f"{output_path.stem}.png"
-    report_path = DEFAULT_OUTPUT_DIR / f"{output_path.stem}.json"
+    pose_labels = POSE_LABELS if args.all else (args.pose,)
+    output_dir = args.output_dir or DEFAULT_OUTPUT_DIR
+    model = load_smpl_data(model_path)
 
-    vertices, faces = load_template_mesh(model_path)
-    write_glb(output_path, vertices, faces, model_path.name)
-    validate_glb(output_path)
-    if not args.skip_preview:
-        render_preview(preview_path, vertices, faces)
-    write_report(report_path, model_path, output_path, vertices, faces)
+    for pose_label in pose_labels:
+        output_path = (
+            args.output
+            if args.output is not None
+            else output_dir / f"{pose_label}_{args.model}.glb"
+        )
+        # Keep review-only artefacts out of frontend/public. Vite only needs
+        # the GLB at runtime.
+        preview_path = DEFAULT_OUTPUT_DIR / f"{output_path.stem}.png"
+        report_path = DEFAULT_OUTPUT_DIR / f"{output_path.stem}.json"
 
-    print(f"Generated: {output_path}")
-    if not args.skip_preview:
-        print(f"Preview:   {preview_path}")
-    print(f"Report:    {report_path}")
-    print(f"Geometry:  {len(vertices)} vertices, {len(faces)} faces")
+        vertices, faces = generate_pose_mesh(model, pose_label)
+        write_glb(output_path, vertices, faces, model_path.name, pose_label)
+        validate_glb(output_path)
+        if not args.skip_preview:
+            render_preview(preview_path, vertices, faces, pose_label)
+        write_report(
+            report_path,
+            model_path,
+            output_path,
+            vertices,
+            faces,
+            pose_label,
+        )
+
+        print(f"Generated: {output_path}")
+        if not args.skip_preview:
+            print(f"Preview:   {preview_path}")
+        print(f"Report:    {report_path}")
+        print(f"Geometry:  {len(vertices)} vertices, {len(faces)} faces")
 
 
 if __name__ == "__main__":

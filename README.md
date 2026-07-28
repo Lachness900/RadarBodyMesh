@@ -27,7 +27,8 @@ Important limitations:
 - Replay predictions use the preliminary trained model; mock mode remains synthetic.
 - Live radar input is not connected yet.
 - The checkpoint still needs evaluation on outlier recordings such as `t_pose_1_1`.
-- The SMPL reference viewer currently includes T Pose only.
+- The SMPL viewer includes the five recognized pose references. `Other Pose`
+  intentionally has no standard reference.
 
 ## Project Structure
 
@@ -79,22 +80,24 @@ That directory is also ignored by Git.
 
 ## SMPL Reference Pose
 
-The Current Pose panel includes an interactive reference when the prediction is
-`t_pose`. Its GLB is tracked at
-`frontend/public/reference-poses/t_pose_male.glb`, so it works immediately after
-cloning or pulling the repository. No local SMPL installation is required to
-use it. To regenerate the asset intentionally:
+The five recognized pose-reference GLBs are tracked in Git and work immediately
+after cloning or pulling the repository. They are static demonstrations, not
+body meshes reconstructed from radar data.
+
+To regenerate them, place the trusted source SMPL file under
+`OneDrive/SMPL_model/`, install the Python requirements, and run:
 
 ```bash
 .venv/bin/python tools/smpl_reference/generate_reference_pose.py \
   --model male \
-  --output frontend/public/reference-poses/t_pose_male.glb
+  --all \
+  --output-dir frontend/public/reference-poses
 ```
 
-The source `.pkl` files remain ignored by Git. The viewer supports
-rotation, zoom, pan, and view reset. It is a standard pose reference, not a body
-mesh reconstructed from radar data. Other pose references have not been added
-yet.
+The T Pose is the original SMPL template. The other poses use the same template
+with reviewed joint rotations. The source `.pkl` files stay local and ignored
+by Git. The viewer supports rotation, zoom, pan, and view reset. `Other Pose`
+has no reference because that class represents multiple unrelated poses.
 
 ## Backend
 

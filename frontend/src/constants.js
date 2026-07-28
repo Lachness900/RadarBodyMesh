@@ -2,6 +2,11 @@ export const WS_URL =
   import.meta.env.VITE_MMYOGA_WS_URL || "ws://localhost:8000/ws/predictions";
 export const API_URL = import.meta.env.VITE_MMYOGA_API_URL || "http://localhost:8000";
 const REFERENCE_POSE_ROOT = `${import.meta.env.BASE_URL}reference-poses`;
+const REFERENCE_POSE_VERSION = "20260727-warrior-1-palms";
+
+function referencePoseAsset(filename) {
+  return `${REFERENCE_POSE_ROOT}/${filename}?v=${REFERENCE_POSE_VERSION}`;
+}
 
 export function buildPredictionWsUrl({ source, replayFile }) {
   const url = new URL(WS_URL);
@@ -21,8 +26,12 @@ export const POSES = [
   { key: "other", label: "Other Pose", color: "#6c5b7b" },
 ];
 
-// Stage one includes only the canonical SMPL T Pose. Other labels deliberately
-// remain unmapped until their reference poses have been reviewed by the team.
+// "other" deliberately remains unmapped because it is a catch-all class, not a
+// single pose that could be represented honestly by one reference mesh.
 export const REFERENCE_POSES = {
-  t_pose: `${REFERENCE_POSE_ROOT}/t_pose_male.glb`,
+  t_pose: referencePoseAsset("t_pose_male.glb"),
+  standing_pose: referencePoseAsset("standing_pose_male.glb"),
+  warrior_1_pose: referencePoseAsset("warrior_1_pose_male.glb"),
+  warrior_2_pose: referencePoseAsset("warrior_2_pose_male.glb"),
+  angle_pose: referencePoseAsset("angle_pose_male.glb"),
 };
