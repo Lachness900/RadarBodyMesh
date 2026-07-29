@@ -128,13 +128,18 @@ def _warrior_1_pose() -> NDArray[np.float64]:
     _set_joint(pose, "right_hip", x=-80)
     _set_joint(pose, "right_knee", x=80)
 
-    # Raise the shoulder girdle and arms together so the default SMPL palms
-    # meet above the head. Elbows, wrists, hands, and fixed fingers stay in
-    # their source pose; classic SMPL has no independent finger articulation.
+    # Raise the shoulder girdle and arms together. The canonical SMPL palms
+    # otherwise face away from each other here, so spread a 180-degree
+    # longitudinal turn across each shoulder, elbow, and wrist. This brings the
+    # palms face-to-face without directly deforming the fixed finger geometry.
     _set_joint(pose, "left_collar", z=10)
     _set_joint(pose, "right_collar", z=-10)
-    _set_joint(pose, "left_shoulder", z=93)
-    _set_joint(pose, "right_shoulder", z=-93)
+    _set_joint(pose, "left_shoulder", x=-60, z=94.5)
+    _set_joint(pose, "right_shoulder", x=60, z=-94.5)
+    _set_joint(pose, "left_elbow", x=-60)
+    _set_joint(pose, "right_elbow", x=60)
+    _set_joint(pose, "left_wrist", x=-60)
+    _set_joint(pose, "right_wrist", x=60)
     return pose
 
 

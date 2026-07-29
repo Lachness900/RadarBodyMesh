@@ -2,7 +2,7 @@ export const WS_URL =
   import.meta.env.VITE_MMYOGA_WS_URL || "ws://localhost:8000/ws/predictions";
 export const API_URL = import.meta.env.VITE_MMYOGA_API_URL || "http://localhost:8000";
 const REFERENCE_POSE_ROOT = `${import.meta.env.BASE_URL}reference-poses`;
-const REFERENCE_POSE_VERSION = "20260727-warrior-1-palms";
+const REFERENCE_POSE_VERSION = "20260729-warrior-1-prayer-joined";
 
 function referencePoseAsset(filename) {
   return `${REFERENCE_POSE_ROOT}/${filename}?v=${REFERENCE_POSE_VERSION}`;
