@@ -3,12 +3,13 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.svm import SVC
+from sklearn.svm import LinearSVC
 from sklearn.neural_network import MLPClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.naive_bayes import GaussianNB
 from sklearn.pipeline import make_pipeline
+from joblib import dump
 
 from zstandard import ZstdDecompressor
 
@@ -70,7 +71,7 @@ class DatReader:
                     }
 
             return None
-    def accumulateFrame(self):
+    def accumulateFrame(self, file_count, file_num):
         returned_points = np.array([])
         current_points = np.array([])
         max_points = 100
@@ -85,7 +86,7 @@ class DatReader:
                 if len(current_points) == max_points:
                     returned_points = np.append(returned_points, current_points)
                     frame_num += 1
-                    print("Saved frame", frame_num, current_points.shape)
+                    print("Saved frame", frame_num, f"({file_count}/{file_num})")
                     yield current_points
             elif msg_type == 1:
                 pass
@@ -136,6 +137,8 @@ def append_recent_points(
 def main() -> int:
     base_path = Path(BASE_PATH)
     poses = [d for d in base_path.iterdir()]
+    file_num = len([file for pose in poses for file in pose.iterdir()])
+    file_count = 0
     samples = []
     labels = []
     for pose in poses:
@@ -145,9 +148,10 @@ def main() -> int:
         for file in files:
             print("Opening", file.name)
             dat_reader = DatReader(file)
-            for frame in dat_reader.accumulateFrame():
+            for frame in dat_reader.accumulateFrame(file_count, file_num):
                 samples.append(frame.flatten())
                 labels.append(pose_name)
+            file_count += 1
     X = np.array(samples)
     y = np.array(labels)
 
@@ -196,10 +200,10 @@ def main() -> int:
                     )
         },
         {
-            "name": "Support Vector Machine",
+            "name": "Linear Support Vector Machine",
             "model": make_pipeline(
                         StandardScaler(),
-                        SVC()
+                        LinearSVC()
                     )
         },
         {
@@ -236,6 +240,7 @@ def main() -> int:
         matrix = confusion_matrix(y_test, y_pred)
         print("Confusion Matrix: \n", matrix)
         print("  ")
+        dump(model_pipeline, f"other_ai_models\\models\\{model_name}.joblib")
 
 if __name__ == "__main__":
     main()
