@@ -9,3 +9,4 @@ uvicorn[standard]
 pyvirtualcam
 torch
 smplx==0.1.28
+scikit-learn
