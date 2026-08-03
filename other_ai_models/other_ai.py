@@ -1,24 +1,31 @@
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, confusion_matrix
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.svm import SVC
-from sklearn.neural_network import MLPClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.naive_bayes import GaussianNB
-from sklearn.pipeline import make_pipeline
-
-from zstandard import ZstdDecompressor
+import struct
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import numpy as np
+from joblib import dump
 from numpy.typing import NDArray
-from pathlib import Path
-import struct
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import LinearSVC
+from sklearn.tree import DecisionTreeClassifier
+from zstandard import ZstdDecompressor
 
 BASE_PATH = 'other_ai_models/data'
-
+OUTPUT_PATH = 'other_ai_models/Split_models'
+MAX_POINTS = 100
+MAX_UPPER_POINTS = 60
+MAX_LOWER_POINTS = 40
+Y_SPLIT = 0.7
+HISTORY_FACTOR = 0.8
+EXPONENTIAL_FACTOR = 0.2
 
 class ReaderParserError(Exception):
     def __init__(self, reason):
@@ -70,25 +77,65 @@ class DatReader:
                     }
 
             return None
+    # Change size to (0, 4) if using exponential
     def accumulateFrame(self):
-        returned_points = np.array([])
-        current_points = np.array([])
-        max_points = 100
-        frame_num = 0
+        returned_points = np.empty((0, 3), dtype=np.float64)
+        current_points = np.empty((0, 3), dtype=np.float64)
         for d in self.nextFrame():
             msg_type = d["message_type"]
             msg = d["point_cloud"]
-
             if msg_type == 2:
-                data = center_data(filter_data(msg))
-                current_points = append_recent_points(current_points, data, limit=max_points)
-                if len(current_points) == max_points:
+                current_points = process_data(current_points, msg)
+                if len(current_points) == MAX_POINTS:
+
                     returned_points = np.append(returned_points, current_points)
-                    frame_num += 1
-                    print("Saved frame", frame_num, current_points.shape)
                     yield current_points
             elif msg_type == 1:
                 pass
+
+## Simple filtering
+# def process_data(current_data: NDArray, data: NDArray):
+#     return append_recent_points(current_data, center_data(filter_data(data)), limit=MAX_POINTS)
+
+# Split filtering
+def process_data(current_data: NDArray, data: NDArray):
+    upper_points, lower_points = split_points(current_data)
+    upper_data, lower_data = split_points(center_data(filter_data(data)))
+    upper_points = append_recent_points(upper_points, upper_data, MAX_UPPER_POINTS)
+    lower_points = append_recent_points(lower_points, lower_data, MAX_LOWER_POINTS)
+    if upper_points.shape == (0,):
+        return lower_points
+    if lower_points.shape == (0,):
+        return upper_points
+    return np.concatenate((upper_points, lower_points), axis=0) 
+
+## Exponentially weighted filtering
+# def process_data(current_data: NDArray, data: NDArray):
+#     data = center_data(filter_data(data))
+#     data = add_strength_column(data)
+#     data = update_strength_column(current_data.reshape(-1, 4), data)
+#     return data
+
+def add_strength_column(data, init_value: float = 1):
+    if data.shape[1] == 4:
+        return data
+    return np.hstack((data, np.full(np.size(data, axis=0), init_value).reshape(-1, 1)))
+
+def update_strength_column(current_data, data, factor = HISTORY_FACTOR):
+    data = np.concatenate((current_data,data))
+    data[:,3] *= factor * (1 - np.exp(- EXPONENTIAL_FACTOR**2 *(data[:,0]**2 + data[:,1]**2 + data[:,2]**2)))
+    if np.size(data) <= MAX_POINTS:
+        return data
+    indicies = np.argsort(data[:,3])[-MAX_POINTS:][::-1]
+    return data[indicies]
+
+def split_points(
+        points: np.ndarray,
+        y_split: float = Y_SPLIT
+) -> tuple[NDArray, NDArray]:
+    upper_points = np.array([point for point in points if point[2] > y_split])
+    lower_points = np.array([point for point in points if point[2] < y_split])
+    return upper_points, lower_points
 
 # Defines static boundaries around the movement area
 def filter_data(data: NDArray):
@@ -123,19 +170,45 @@ def center_data(
 def append_recent_points(
     current: np.ndarray,
     new_points: np.ndarray,
-    limit: int,
+    limit: int = MAX_POINTS,
 ) -> np.ndarray:
     points = np.asarray(new_points, dtype=np.float64)
+
     if points.size == 0:
         return current
-    points = points[:, :3]
-    if current.size == 0:
+    elif current.size == 0:
         return points[-limit:]
+    
     return np.concatenate([current, points], axis=0)[-limit:]
+
+def train_model(model, X, y):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=45,
+        stratify=y
+    )
+    model_pipeline = model["model"]
+    model_name = model["name"]
+    model_pipeline.fit(X_train, y_train)
+    y_pred = model_pipeline.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    matrix = confusion_matrix(y_test, y_pred)
+
+    print("Training", model_name)
+    print(f"Accuracy: {accuracy:.2%}")
+    print("Confusion Matrix: \n", matrix)
+    print("  ")
+    dump(model_pipeline, f"{OUTPUT_PATH}\\{model_name}.joblib")
 
 def main() -> int:
     base_path = Path(BASE_PATH)
     poses = [d for d in base_path.iterdir()]
+    file_num = len([file for pose in poses for file in pose.iterdir()])
+    file_count = 0
+    file_num = len([file for pose in poses for file in pose.iterdir()])
+    file_count = 0
     samples = []
     labels = []
     for pose in poses:
@@ -145,19 +218,13 @@ def main() -> int:
         for file in files:
             print("Opening", file.name)
             dat_reader = DatReader(file)
-            for frame in dat_reader.accumulateFrame():
-                samples.append(frame.flatten())
+            for frame in enumerate(dat_reader.accumulateFrame(), 0):
+                samples.append(frame[1].flatten())
                 labels.append(pose_name)
+                print("Saved frame", frame[0], f"({file_count}/{file_num})")
+            file_count += 1
     X = np.array(samples)
     y = np.array(labels)
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        random_state=42,
-        stratify=labels
-    )
 
     models = [
         {
@@ -196,10 +263,10 @@ def main() -> int:
                     )
         },
         {
-            "name": "Support Vector Machine",
+            "name": "Linear Support Vector Machine",
             "model": make_pipeline(
                         StandardScaler(),
-                        SVC()
+                        LinearSVC()
                     )
         },
         {
@@ -224,18 +291,10 @@ def main() -> int:
                     )
         },
     ]
-    for model in models:
-        model_pipeline = model["model"]
-        model_name = model["name"]
-        print("Training", model_name)
-        model_pipeline.fit(X_train, y_train)
-
-        y_pred = model_pipeline.predict(X_test)
-        accuracy = accuracy_score(y_test, y_pred)
-        print(f"Accuracy: {accuracy:.2%}")
-        matrix = confusion_matrix(y_test, y_pred)
-        print("Confusion Matrix: \n", matrix)
-        print("  ")
+    model_num = len(models)
+    with ThreadPoolExecutor(max_workers=model_num) as executor:
+        for i in range(model_num):
+            executor.submit(train_model, model=models[i], X=X, y=y)
 
 if __name__ == "__main__":
     main()

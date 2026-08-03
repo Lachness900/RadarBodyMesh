@@ -1,0 +1,102 @@
+Takes about 40 mins to train
+
+Date Pipeline:
+3D points -> Filtering -> Centering -> Exponential Filtering based off history and distance from center-> model
+
+Order:
+Angle
+Other
+Standing
+T-pose
+Warrior_1
+Warrior_2
+
+Training Gaussian NB
+Accuracy: 29.94%
+Confusion Matrix: 
+ [[ 160 1311   65  316 1679  253]
+ [  41  433    8    1   19   46]
+ [  34 1328  878  342 1152   94]
+ [ 320  712  259 1091 1874  549]
+ [  78  864  103  495 3226   21]
+ [ 156  780  218  829 1771  929]]
+  
+Training K-Nearest Neighbour 10
+Accuracy: 29.28%
+Confusion Matrix: 
+ [[ 904   16 1004   47 1760   53]
+ [ 238   35  107    2  160    6]
+ [ 416   14 1461   79 1822   36]
+ [ 423    3  947 1236 1785  411]
+ [ 326   12 1051  467 2408  523]
+ [ 358    5  869 1046 1881  524]]
+  
+Training K-Nearest Neighbour 15
+Accuracy: 29.21%
+Confusion Matrix: 
+ [[ 898    6 1027   34 1774   45]
+ [ 250   21  107    2  162    6]
+ [ 398    7 1460   63 1867   33]
+ [ 395    2  927 1228 1865  388]
+ [ 314    9 1003  491 2458  512]
+ [ 352    2  849 1074 1917  489]]
+  
+Training K-Nearest Neighbour 5
+Accuracy: 29.51%
+Confusion Matrix: 
+ [[ 932   37  943   82 1697   93]
+ [ 251   51   91    5  143    7]
+ [ 452   28 1401  110 1784   53]
+ [ 536   17  906 1306 1603  437]
+ [ 339   23 1087  490 2295  553]
+ [ 430   19  825 1015 1758  636]]
+  
+Training Decision Tree
+Accuracy: 59.65%
+Confusion Matrix: 
+ [[2117  132  411  275  400  449]
+ [ 126  167  107   46   48   54]
+ [ 405  118 2372  282  396  255]
+ [ 272   47  242 3031  342  871]
+ [ 433   45  394  354 3126  435]
+ [ 541   51  240  891  390 2570]]
+  
+Training Random Forest
+Accuracy: 75.87%
+Confusion Matrix: 
+ [[2983    7  262   81  220  231]
+ [ 164  132  120   53   42   37]
+ [ 334   15 3112   94  151  122]
+ [ 201    1  234 3632  192  545]
+ [ 409    5  165   99 3916  193]
+ [ 493    2  168  494  280 3246]]
+  
+Training Linear Support Vector Machine
+Accuracy: 40.76%
+Confusion Matrix: 
+ [[1002    0  881  699  826  376]
+ [ 236    1  117   58   98   38]
+ [ 333    0 2240  369  624  262]
+ [ 270    0  505 2602  927  501]
+ [ 417    0  664  697 2585  424]
+ [ 452    0  698 1589 1230  714]]
+  
+Training Logistic Regression
+Accuracy: 41.20%
+Confusion Matrix: 
+ [[1158   55  688  615  746  522]
+ [ 243   66  102   43   50   44]
+ [ 386   67 2025  321  671  358]
+ [ 343    8  372 2386  902  794]
+ [ 511    9  530  582 2524  631]
+ [ 558   16  529 1377 1118 1085]]
+  
+Training MLP Classifier
+Accuracy: 59.39%
+Confusion Matrix: 
+ [[2319  160  251  267  335  452]
+ [ 112  232   96   36   45   27]
+ [ 331  116 2441  245  507  188]
+ [ 344   30  222 2733  351 1125]
+ [ 407   67  392  341 3057  523]
+ [ 535   34  163 1028  381 2542]]

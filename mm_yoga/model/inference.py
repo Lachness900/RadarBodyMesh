@@ -13,6 +13,8 @@ from numpy.typing import NDArray
 import torch
 import torch.nn as nn
 
+import joblib
+
 DEFAULT_POSE_LABELS = [
     "t_pose",
     "standing_pose",
@@ -60,6 +62,14 @@ class PoseCNN(nn.Module):
     def forward(self, x):
         x = self.features(x)
         return self.classifier(x)
+
+## Should be joblib path
+class PoseDecisionTree:
+    def __init__(self, path: Path):
+        data = joblib.load(path)
+        self.model = data["model"]
+    def predict(self, points):
+        return self.model.predict(points)
 
 
 class PoseClassifier:
