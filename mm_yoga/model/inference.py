@@ -69,7 +69,8 @@ class PoseDecisionTree:
         data = joblib.load(path)
         self.model = data["model"]
     def predict(self, points):
-        return self.model.predict(points)
+        probabilities = self.model.predict_proba(points)
+        return _result_from_probabilities(probabilities[:,0], probabilities[:,1])
 
 
 class PoseClassifier:
