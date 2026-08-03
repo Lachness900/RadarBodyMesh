@@ -22,6 +22,7 @@ data/replay/
 data/smpl_reference/
 models/*
 !models/.gitkeep
+**.joblib
 
 # Frontend
 frontend/node_modules/
