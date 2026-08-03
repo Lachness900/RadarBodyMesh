@@ -94,6 +94,8 @@ add_executable(DataHandlerClass src/DataHandlerClass.cpp)
 
 add_executable(ConfigParameterServer src/ConfigParameterServer.cpp)
 
+add_executable(PointCloudUDPBridge src/PointCloudUDPBridge.cpp)
+
 
 target_link_libraries(mmWaveCommSrv 
   mmwave 
@@ -110,6 +112,10 @@ target_link_libraries(ParameterParser
 target_link_libraries(DataHandlerClass
   mmwave
   ${Boost_LIBRARIES}
+)
+
+target_link_libraries(PointCloudUDPBridge
+  mmwave
 )
 
 ament_target_dependencies(mmwave
@@ -198,6 +204,20 @@ ament_target_dependencies(ConfigParameterServer
   "tf2_geometry_msgs"
 )
 
+ament_target_dependencies(PointCloudUDPBridge   
+  "rclcpp"
+  "rclcpp_components"
+  "rcutils"
+  "rcl_interfaces"  
+  "serial"
+  "sensor_msgs"
+  "std_msgs" 
+  "visualization_msgs"
+  "pluginlib"
+  "ti_mmwave_rospkg_msgs"
+  "tf2_geometry_msgs"
+)
+
 
 
 ament_export_dependencies(${dependencies} ti_mmwave_rospkg_msgs)
@@ -245,6 +265,11 @@ install(TARGETS
 
 install(TARGETS 
   DataHandlerClass 
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(TARGETS 
+  PointCloudUDPBridge 
   DESTINATION lib/${PROJECT_NAME}
 )
 
