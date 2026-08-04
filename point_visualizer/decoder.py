@@ -178,3 +178,10 @@ class DatReader:
             
             return None
         pass
+
+
+if __name__ == "__main__":
+   udp_reader = UDPStreamReader()
+
+   for timestamp, pc_data in udp_reader.frames():
+      print(timestamp, pc_data.shape)
