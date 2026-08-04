@@ -21,7 +21,8 @@ from mm_yoga.data.preprocess import (
 )
 from mm_yoga.model.inference import (
     MockPosePredictor,
-    PoseClassifier,
+    CNNPoseClassifier,
+    SklearnPoseClassifier,
     PredictionResult,
 )
 
@@ -67,7 +68,7 @@ def build_message(
 
 
 def _predict_points(
-    predictor: MockPosePredictor | PoseClassifier,
+    predictor: MockPosePredictor | CNNPoseClassifier | SklearnPoseClassifier,
     points: np.ndarray,
 ) -> tuple[PredictionResult, float]:
     """Run one prediction and return its measured inference latency.
@@ -79,7 +80,7 @@ def _predict_points(
     started = time.perf_counter()
     model_input = (
         points
-        if isinstance(predictor, PoseClassifier)
+        if isinstance(predictor, CNNPoseClassifier | SklearnPoseClassifier)
         else points_to_features(points, max_points=CLASSIFIER_BATCH_POINTS)
     )
     prediction = predictor.predict(model_input)

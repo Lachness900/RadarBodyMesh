@@ -13,6 +13,9 @@ from numpy.typing import NDArray
 import torch
 import torch.nn as nn
 
+from sklearn.neural_network import MLPClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.pipeline import Pipeline
 import joblib
 
 DEFAULT_POSE_LABELS = [
@@ -32,7 +35,6 @@ class PredictionResult:
     label: str
     confidence: float
     probabilities: dict[str, float]
-
 
 class PoseCNN(nn.Module):
     def __init__(self, num_classes: int, grid_size: int):
@@ -64,20 +66,21 @@ class PoseCNN(nn.Module):
         return self.classifier(x)
 
 ## Should be joblib path
-class PoseDecisionTree:
+class SklearnPoseClassifier:
     def __init__(self, path: Path):
-        data = joblib.load(path)
-        self.model = data["model"]
-    def predict(self, points):
-        probabilities = self.model.predict_proba(points)
-        return _result_from_probabilities(probabilities[:,0], probabilities[:,1])
+        self.model = joblib.load(path)
+        self.labels = list(self.model.classes_)
+    def predict(self, points: np.ndarray[np.floating]) -> PredictionResult:
+        points = points[:, 0:3].flatten()[:300].reshape(1, -1)
+        probabilities = self.model.predict_proba(points)[0]
+        return _result_from_probabilities(self.labels, probabilities)
 
 
-class PoseClassifier:
+class CNNPoseClassifier:
     """Load and run the CNN checkpoint trained from Y-Z radar histograms."""
 
-    def __init__(self, checkpoint_path: Path):
-        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    def __init__(self, path: Path):
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
         self.labels = list(ckpt["label_names"])
         self.grid_size = int(ckpt["grid_size"])
         self.lo = np.asarray(ckpt["grid_bounds_lo"], dtype=np.float64)
@@ -160,14 +163,17 @@ def load_predictor(
     path: Optional[Union[str, Path]] = None,
     *,
     labels: Sequence[str] = DEFAULT_POSE_LABELS,
-) -> MockPosePredictor | PoseClassifier:
+) -> CNNPoseClassifier | SklearnPoseClassifier:
     """Load a trained checkpoint, falling back to mock output if unavailable."""
 
-    if path is None:
-        return MockPosePredictor(labels)
-
     model_path = Path(path)
-    if not model_path.exists():
-        return MockPosePredictor(labels)
 
-    return PoseClassifier(model_path)
+    assert(model_path.exists())
+
+    file_type = model_path.name.split('.')[-1]
+    if file_type == 'pt':
+        return CNNPoseClassifier(model_path)
+    elif file_type == 'joblib':
+        return SklearnPoseClassifier(model_path)
+    else:
+        raise Exception("No model found")
