@@ -1,0 +1,36 @@
+{
+  "name": "ROS 2 Jazzy Development",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  
+  // Match the WORKDIR from the Dockerfile
+  "workspaceFolder": "/ros2_ws",
+  
+  // VS Code will automatically mount your project root to this folder
+  "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
+  
+  // Replicate the hardware and network settings from docker-compose
+  "runArgs": [
+    "--network=host",
+    "--device=/dev/ttyACM0:/dev/ttyACM0",
+    "--device=/dev/ttyACM1:/dev/ttyACM1",
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW"
+  ],
+
+  // Install ROS and C++/Python extensions inside the container automatically
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-iot.vscode-ros",
+        "ms-vscode.cpptools",
+        "ms-python.python"
+      ]
+    }
+  },
+
+  // Automatically resolve ROS dependencies after the container starts
+  "postCreateCommand": "sudo apt-get update && rosdep update && rosdep install -y --from-paths src --ignore-src --rosdistro jazzy"
+}
