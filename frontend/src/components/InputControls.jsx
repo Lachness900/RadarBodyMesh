@@ -5,7 +5,7 @@ export function InputControls({ onChange, onOptionsChange, options, selection })
   const hasReplayFiles = replayFiles.length > 0;
 
   const setInput = (source) => {
-    if (source === "live") return;
+    // add live mode 
     onChange((current) => ({
       source,
       replayFile: source === "replay" ? current.replayFile || replayFiles[0]?.path || "" : "",
@@ -59,8 +59,11 @@ export function InputControls({ onChange, onOptionsChange, options, selection })
         >
           Replay
         </button>
-        <button disabled title="Live radar is not connected yet" type="button">
-          Live soon
+        <button 
+          className={selection.source === "live" ? "active" : ""} 
+          onClick={() => setInput("live")}
+          type="button">
+          Live
         </button>
       </div>
 

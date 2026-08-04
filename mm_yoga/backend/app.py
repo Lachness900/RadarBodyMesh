@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -14,6 +15,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised by runtime se
         "`pip install -r requirements.txt`."
     ) from exc
 
+from mm_yoga.backend.live import async_live_messages
 from mm_yoga.backend.replay import (
     async_mock_messages,
     async_replay_messages,
@@ -30,7 +32,7 @@ DEFAULT_REPLAY_DIRS = [
     Path("OneDrive/DepthCam_Radar_Cloud_Combined"),
     UPLOAD_REPLAY_DIR,
 ]
-
+logger = logging.getLogger("uvicorn.error")
 # The backend defaults to replay mode because the first dashboard milestone is
 # about showing an existing recording, not connecting live radar yet.
 app = FastAPI(title="mmYoga backend", version="0.1.0")
@@ -92,7 +94,7 @@ def _source_mode(raw_source: str | None) -> str:
     """Normalize source query values used by REST and WebSocket endpoints."""
 
     source = (raw_source or "auto").lower()
-    return source if source in {"auto", "replay", "mock"} else "auto"
+    return source if source in {"live", "replay", "mock"} else "auto"
 
 
 def _mock_latest() -> dict[str, object]:
@@ -189,6 +191,15 @@ async def predictions(websocket: WebSocket) -> None:
                     predictor=predictor,
                     playback_speed=float(os.getenv("MMYOGA_PLAYBACK_SPEED", "1.0")),
                 ):
+                    await websocket.send_json(message)
+        elif mode == "live":
+            try:
+                async for message in async_live_messages(predictor=predictor):
+                    await websocket.send_json(message)
+            except TimeoutError:
+                print("Radar unavailable, fallback to mock")
+
+                async for message in async_mock_messages():
                     await websocket.send_json(message)
         else:
             # Development fallback when the recording is not present locally.
