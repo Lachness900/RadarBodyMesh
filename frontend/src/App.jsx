@@ -22,7 +22,7 @@ export default function App() {
     const timestamp = message?.timestamp_ms || 0;
     return `${(timestamp / 1000).toFixed(1)}s`;
   }, [message]);
-  const timestampLabel = message?.source === "replay" ? "Replay time" : "Mock time";
+  const timestampLabel = message?.source === "replay" ? "Replay time" : message?.source === "live" ? "Radar time": "Mock time";
   const pointView = useMemo(() => {
     const pointSets = message.point_sets || {};
     const selected = pointSets[pointMode] || message.points || [];

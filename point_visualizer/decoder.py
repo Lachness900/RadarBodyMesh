@@ -15,10 +15,11 @@ import queue
 
 import numpy as np
 
-if sys.version_info < (3, 14):
-    from compression.zstd import ZstdDecompressor
-else:
-    from zstandard import ZstdDecompressor
+# if sys.version_info < (3, 14):
+#     from compression.zstd import ZstdDecompressor
+# else:
+
+from zstandard import ZstdDecompressor
 
 
 class UDPStreamReader:
@@ -110,9 +111,9 @@ class UDPStreamReader:
   def frames(self):
     while True:
       try:
-        yield self.q.get()
+        yield self.q.get(timeout=2.0)
       except queue.Empty:
-        continue
+        raise TimeoutError("No UDP radar data received")
       except queue.ShutDown:
         break
 
