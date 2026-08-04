@@ -8,7 +8,6 @@ from numpy.typing import NDArray
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix
-from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
@@ -19,7 +18,8 @@ from sklearn.tree import DecisionTreeClassifier
 from zstandard import ZstdDecompressor
 
 BASE_PATH = 'other_ai_models/data'
-OUTPUT_PATH = 'other_ai_models/Split_models'
+OUTPUT_PATH = 'other_ai_models/Split_models_seperate'
+TEST_PATH = 'other_ai_models/test_data'
 MAX_POINTS = 100
 MAX_UPPER_POINTS = 60
 MAX_LOWER_POINTS = 40
@@ -181,32 +181,8 @@ def append_recent_points(
     
     return np.concatenate([current, points], axis=0)[-limit:]
 
-def train_model(model, X, y):
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        random_state=45,
-        stratify=y
-    )
-    model_pipeline = model["model"]
-    model_name = model["name"]
-    model_pipeline.fit(X_train, y_train)
-    y_pred = model_pipeline.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
-    matrix = confusion_matrix(y_test, y_pred)
-
-    print("Training", model_name)
-    print(f"Accuracy: {accuracy:.2%}")
-    print("Confusion Matrix: \n", matrix)
-    print("  ")
-    dump(model_pipeline, f"{OUTPUT_PATH}\\{model_name}.joblib")
-
-def main() -> int:
-    base_path = Path(BASE_PATH)
+def get_data(base_path):
     poses = [d for d in base_path.iterdir()]
-    file_num = len([file for pose in poses for file in pose.iterdir()])
-    file_count = 0
     file_num = len([file for pose in poses for file in pose.iterdir()])
     file_count = 0
     samples = []
@@ -223,8 +199,31 @@ def main() -> int:
                 labels.append(pose_name)
                 print("Saved frame", frame[0], f"({file_count}/{file_num})")
             file_count += 1
-    X = np.array(samples)
-    y = np.array(labels)
+    return np.array(samples), np.array(labels)
+
+def train_model(model, X, y, X_test, y_test):
+    model_pipeline = model["model"]
+    model_name = model["name"]
+    model_pipeline.fit(X, y)
+    evaluate_model(model_pipeline, model_name, X_test, y_test)
+    dump(model_pipeline, f"{OUTPUT_PATH}\\{model_name}.joblib")
+
+def evaluate_model(model, model_name, X_test, y_test):
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    matrix = confusion_matrix(y_test, y_pred)
+
+    print("Training", model_name)
+    print(f"Accuracy: {accuracy:.2%}")
+    print("Confusion Matrix: \n", matrix)
+    print("  ")
+
+def main() -> int:
+    base_path = Path(BASE_PATH)
+    test_path = Path(TEST_PATH)
+    X, y = get_data(base_path)
+    X_test, y_test = get_data(test_path)
+
 
     models = [
         {
@@ -291,10 +290,11 @@ def main() -> int:
                     )
         },
     ]
+    print("Training")
     model_num = len(models)
     with ThreadPoolExecutor(max_workers=model_num) as executor:
         for i in range(model_num):
-            executor.submit(train_model, model=models[i], X=X, y=y)
+            executor.submit(train_model, model=models[i], X=X, y=y, X_test=X_test, y_test=y_test)
 
 if __name__ == "__main__":
     main()
