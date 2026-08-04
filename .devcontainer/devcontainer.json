@@ -1,36 +1,44 @@
 {
-  "name": "ROS 2 Jazzy Development",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": ".."
-  },
-  
-  // Match the WORKDIR from the Dockerfile
-  "workspaceFolder": "/ros2_ws",
-  
-  // VS Code will automatically mount your project root to this folder
-  "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
-  
-  // Replicate the hardware and network settings from docker-compose
-  "runArgs": [
-    "--network=host",
-    "--device=/dev/ttyACM0:/dev/ttyACM0",
-    "--device=/dev/ttyACM1:/dev/ttyACM1",
-    "--cap-add=NET_ADMIN",
-    "--cap-add=NET_RAW"
-  ],
-
-  // Install ROS and C++/Python extensions inside the container automatically
-  "customizations": {
-    "vscode": {
-      "extensions": [
-        "ms-iot.vscode-ros",
-        "ms-vscode.cpptools",
-        "ms-python.python"
-      ]
-    }
-  },
-
-  // Automatically resolve ROS dependencies after the container starts
-  "postCreateCommand": "sudo apt-get update && rosdep update && rosdep install -y --from-paths src --ignore-src --rosdistro jazzy"
+    "name": "ROS 2 Development Container",
+    "privileged": true,
+    "remoteUser": "iotc",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "args": {
+            "USERNAME": "iotc"
+        }
+    },
+    "workspaceFolder": "/home/ros2_ws",
+    "workspaceMount": "source=${localWorkspaceFolder}/radar_driver,target=/home/ros2_ws/src,type=bind",
+    "customizations": {
+        "vscode": {
+            "extensions":[
+                "llvm-vs-code-extensions.vscode-clangd",
+                "twxs.cmake",
+                "xaver.clang-format",
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "KevinRose.vsc-python-indent"
+            ]
+        }
+    },
+    "containerEnv": {
+        "DISPLAY": "unix:0",
+        "ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST",
+        "ROS_DOMAIN_ID": "42"
+    },
+    "runArgs": [
+        "--net=host",
+        "--pid=host",
+        "--ipc=host",
+        "-e", "DISPLAY=${env:DISPLAY}",
+        "--device=/dev/ttyACM0:/dev/ttyACM0", 
+        "--device=/dev/ttyACM1:/dev/ttyACM1", 
+        "--group-add=dialout"
+    ],
+    "mounts": [
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
+        "source=/dev/dri,target=/dev/dri,type=bind,consistency=cached"
+    ],
+    "postStartCommand": "source /opt/ros/jazzy/setup.bash ; rosdep update && sudo rosdep install --from-paths /home/ros2_ws/src --ignore-src -y && sudo chown -R $(whoami) /home/ros2_ws"
 }

@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: custom_ros2_jazzy_image:latest
-    container_name: jazzy_node_container
+    container_name: ti_mmwave_ros_container
     volumes:
     - ./radar_driver:/ros2_ws/src/radar_driver
 
@@ -17,7 +17,8 @@ services:
     stdin_open: true
 
     devices:
-      - "/dev/ttyACM0:/dev/ttyACM1"   # TI radar serial port
+      - "/dev/ttyACM0:/dev/ttyACM0"   # TI radar serial port
+      - "/dev/ttyACM1:/dev/ttyACM1"   # TI radar serial port
 
     group_add:
       - dialout 
@@ -26,4 +27,3 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    
