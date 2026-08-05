@@ -14,7 +14,8 @@ from mm_yoga.backend.replay import (
 )
 from mm_yoga.model.inference import (
     MockPosePredictor,
-    PoseClassifier,
+    CNNPoseClassifier,
+    SklearnPoseClassifier,
     PredictionResult,
 )
 from mm_yoga.data.preprocess import (
