@@ -27,7 +27,7 @@ from mm_yoga.model.inference import (
 CLASSIFIER_RADAR_BOUNDS: Bounds3D = ((1.0, 4.0), (-1.0, 2.0), (-1.5, 1.5))
 CLASSIFIER_BATCH_POINTS = 100
 DEFAULT_PREDICTION_INTERVAL_MS = float(
-    os.getenv("MMYOGA_PREDICTION_INTERVAL_MS", "500")
+    os.getenv("MMYOGA_PREDICTION_INTERVAL_MS", "0")
 )
 
 
@@ -197,26 +197,34 @@ class RadarStreamProcessor:
                 axis=0,
             )
 
-        if len(self.classifier_pending) >= CLASSIFIER_BATCH_POINTS:
-            # This matches the trained visualizer: classify all accumulated real
-            # points, then consume exactly one 100-point batch from the buffer.
-            # Prediction cadence is throttled so the pose result stays stable
-            # while the point cloud keeps streaming at full frame rate.
-            should_predict = (
-                self.prediction_interval_ms <= 0
-                or self._last_prediction_timestamp_ms is None
-                or timestamp_ms - self._last_prediction_timestamp_ms
-                >= self.prediction_interval_ms
+        batch_ready = len(self.classifier_pending) >= CLASSIFIER_BATCH_POINTS
+        interval_ready = (
+            self.prediction_interval_ms <= 0
+            or self._last_prediction_timestamp_ms is None
+            or timestamp_ms - self._last_prediction_timestamp_ms
+            >= self.prediction_interval_ms
+        )
+        # With a configured interval, predict at each interval tick whenever
+        # points exist, so sparse live frames still update regularly instead of
+        # waiting many seconds to accumulate 100 points. Interval 0 keeps the
+        # original 100-point batch behaviour.
+        should_predict = (
+            len(self.classifier_pending) > 0
+            and (
+                batch_ready
+                if self.prediction_interval_ms <= 0
+                else interval_ready
             )
-            if should_predict:
-                self.current_prediction, self.last_inference_latency_ms = predict_points(
-                    self.predictor,
-                    self.classifier_pending,
-                )
-                self._last_prediction_timestamp_ms = timestamp_ms
-                self.classifier_pending = self.classifier_pending[
-                    CLASSIFIER_BATCH_POINTS:
-                ]
+        )
+        if should_predict:
+            self.current_prediction, self.last_inference_latency_ms = predict_points(
+                self.predictor,
+                self.classifier_pending,
+            )
+            self._last_prediction_timestamp_ms = timestamp_ms
+            self.classifier_pending = self.classifier_pending[
+                CLASSIFIER_BATCH_POINTS:
+            ]
 
         fps = self._update_fps(timestamp_ms)
         if self.current_prediction is None:
