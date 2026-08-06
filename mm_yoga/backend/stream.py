@@ -129,8 +129,8 @@ def _smooth_prediction(
         probabilities = dict(current.probabilities)
     else:
         probabilities = {
-            label: current.probabilities.get(label, 0.0) * 0.1
-            + previous.probabilities.get(label, 0.0) * 0.9
+            label: current.probabilities.get(label, 0.0) * 0.2
+            + previous.probabilities.get(label, 0.0) * 0.8
             for label in current.probabilities
         }
     label = max(probabilities, key=probabilities.get)
