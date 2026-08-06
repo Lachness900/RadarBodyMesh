@@ -24,7 +24,7 @@ from mm_yoga.model.inference import (
     SklearnPoseClassifier,
 )
 
-CLASSIFIER_RADAR_BOUNDS: Bounds3D = ((1.0, 4.0), (-1.0, 2.0), (-1.5, 1.5))
+CLASSIFIER_RADAR_BOUNDS: Bounds3D = ((-10.0, 10.0), (-10.0, 10.0), (-10, 10))
 CLASSIFIER_BATCH_POINTS = 100
 DEFAULT_PREDICTION_INTERVAL_MS = float(
     os.getenv("MMYOGA_PREDICTION_INTERVAL_MS", "0")
