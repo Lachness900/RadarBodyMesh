@@ -23,6 +23,7 @@ data/smpl_reference/
 models/*
 !models/.gitkeep
 **.joblib
+log.txt
 
 # Frontend
 frontend/node_modules/

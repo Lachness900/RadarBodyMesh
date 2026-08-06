@@ -139,7 +139,7 @@ def split_points(
 
 # Defines static boundaries around the movement area
 def filter_data(data: NDArray):
-    x_bound = (2, 4)
+    x_bound = (1, 4)
     y_bound = (-1, 2)
     z_bound = (-1.5, 1.5)
 
