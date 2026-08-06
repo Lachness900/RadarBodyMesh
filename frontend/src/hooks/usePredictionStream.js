@@ -1,24 +1,33 @@
 import { useEffect, useState } from "react";
 import { buildPredictionWsUrl } from "../constants";
-import { makeMockMessage } from "../mockData";
+import { makeMockMessage, makeWaitingMessage } from "../mockData";
 
 /**
  * Owns the WebSocket lifecycle for the dashboard.
- * Backend data wins when ws://localhost:8000 is available; otherwise the hook
- * switches to the local mock stream so the UI remains usable.
+ * Local mock fallback is allowed only when Mock is selected. Replay and Live
+ * keep their own waiting/error states so one source cannot impersonate another.
  */
 export function usePredictionStream(sourceSelection) {
   const [message, setMessage] = useState(() => makeMockMessage(0));
   const [status, setStatus] = useState("mock");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let websocket;
     let mockTimer;
     let tick = 1;
     let isActive = true;
+    let terminalError = "";
+    const selectedSource = sourceSelection.source || "mock";
+    setError("");
+
+    if (selectedSource !== "mock") {
+      setMessage(makeWaitingMessage(selectedSource));
+      setStatus("connecting");
+    }
 
     const startMock = () => {
-      if (!isActive || mockTimer) return;
+      if (!isActive || mockTimer || selectedSource !== "mock") return;
       setStatus("mock");
       mockTimer = window.setInterval(() => {
         setMessage(makeMockMessage(tick));
@@ -30,7 +39,8 @@ export function usePredictionStream(sourceSelection) {
       websocket = new WebSocket(buildPredictionWsUrl(sourceSelection));
       websocket.onopen = () => {
         if (!isActive) return;
-        setStatus("connected");
+        setError("");
+        setStatus(selectedSource === "mock" ? "connected" : "waiting");
         if (mockTimer) {
           window.clearInterval(mockTimer);
           mockTimer = undefined;
@@ -38,18 +48,48 @@ export function usePredictionStream(sourceSelection) {
       };
       websocket.onmessage = (event) => {
         if (!isActive) return;
-        setMessage(JSON.parse(event.data));
+        let nextMessage;
+        try {
+          nextMessage = JSON.parse(event.data);
+        } catch {
+          terminalError = "The backend returned an invalid data message.";
+          setStatus(selectedSource === "live" ? "unavailable" : "disconnected");
+          setError(terminalError);
+          websocket.close();
+          return;
+        }
+        if (nextMessage.source !== selectedSource) {
+          terminalError = `Expected ${selectedSource} data, but received ${nextMessage.source || "an unknown source"}.`;
+          setMessage(makeWaitingMessage(selectedSource));
+          setStatus(selectedSource === "live" ? "unavailable" : "disconnected");
+          setError(terminalError);
+          websocket.close();
+          return;
+        }
+        setMessage(nextMessage);
+        setStatus("connected");
+        setError("");
       };
       websocket.onerror = () => {
+        terminalError ||= "Could not connect to the backend data stream.";
         websocket.close();
       };
-      websocket.onclose = () => {
+      websocket.onclose = (event) => {
         if (!isActive) return;
-        setStatus("disconnected");
-        startMock();
+        if (selectedSource === "mock") {
+          startMock();
+        } else {
+          setStatus(selectedSource === "live" ? "unavailable" : "disconnected");
+          setError(terminalError || event.reason || "The backend closed the data stream.");
+        }
       };
-    } catch {
-      startMock();
+    } catch (streamError) {
+      if (selectedSource === "mock") {
+        startMock();
+      } else {
+        setStatus(selectedSource === "live" ? "unavailable" : "disconnected");
+        setError(streamError instanceof Error ? streamError.message : "Could not connect.");
+      }
     }
 
     return () => {
@@ -59,5 +99,5 @@ export function usePredictionStream(sourceSelection) {
     };
   }, [sourceSelection.replayFile, sourceSelection.source]);
 
-  return { message, status };
+  return { error, message, status };
 }

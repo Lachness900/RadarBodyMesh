@@ -11,12 +11,18 @@ function getPoseMeta(label) {
 
 export function PredictionPanel({ prediction }) {
   const confidence = Math.round((prediction?.confidence || 0) * 100);
-  const pose = getPoseMeta(prediction?.label || "unknown");
+  const pose = prediction?.label
+    ? getPoseMeta(prediction.label)
+    : { color: "#8b989b", key: "waiting", label: "Waiting" };
   const poseLabel = pose.label;
   const isLongPose = poseLabel.length > 9;
   const referenceAsset = REFERENCE_POSES[pose.key];
   const emptyReferenceLabel =
-    pose.key === "other" ? "No standard reference" : "Reference not available yet";
+    pose.key === "waiting"
+      ? "Waiting for radar data"
+      : pose.key === "other"
+        ? "No standard reference"
+        : "Reference not available yet";
 
   return (
     <section className="panel prediction-panel">

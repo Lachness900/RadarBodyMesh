@@ -1,11 +1,36 @@
 import { API_URL } from "../constants";
 
-export function InputControls({ onChange, onOptionsChange, options, selection }) {
+export function InputControls({
+  onChange,
+  onOptionsChange,
+  options,
+  selection,
+  streamError,
+  streamStatus,
+}) {
   const replayFiles = options.replay_files || [];
   const hasReplayFiles = replayFiles.length > 0;
+  const liveOption = options.sources?.find((option) => option.id === "live");
+  const liveStatusMessage = (() => {
+    if (selection.source !== "live") return "";
+    if (!liveOption) {
+      if (!options.loaded) return "Checking Live Radar availability...";
+      return (
+        streamError ||
+        options.error ||
+        "Live Radar is not advertised by the running backend."
+      );
+    }
+    if (streamStatus === "connecting" || streamStatus === "waiting") {
+      return `Waiting for UDP radar frames on ${liveOption.status?.endpoint || "the configured endpoint"}...`;
+    }
+    if (streamStatus === "unavailable") {
+      return streamError || "Live Radar connection failed.";
+    }
+    return "";
+  })();
 
   const setInput = (source) => {
-    // add live mode 
     onChange((current) => ({
       source,
       replayFile: source === "replay" ? current.replayFile || replayFiles[0]?.path || "" : "",
@@ -59,13 +84,25 @@ export function InputControls({ onChange, onOptionsChange, options, selection })
         >
           Replay
         </button>
-        <button 
-          className={selection.source === "live" ? "active" : ""} 
+        <button
+          className={selection.source === "live" ? "active" : ""}
           onClick={() => setInput("live")}
-          type="button">
-          Live
+          title="Receive the UDP stream from the ROS2 radar bridge"
+          type="button"
+        >
+          Live Radar
         </button>
       </div>
+
+      {liveStatusMessage && (
+        <span
+          className="input-status-message"
+          data-state={streamStatus}
+          role="status"
+        >
+          {liveStatusMessage}
+        </span>
+      )}
 
       {selection.source === "replay" && (
         <>

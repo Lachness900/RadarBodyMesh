@@ -436,6 +436,19 @@ h1 {
   opacity: 0.42;
 }
 
+.input-status-message {
+  min-width: 0;
+  color: #7d651b;
+  font-size: 0.72rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.input-status-message[data-state="unavailable"],
+.input-status-message[data-state="disconnected"] {
+  color: #b43b24;
+}
+
 .replay-file-control {
   min-width: 0;
   display: inline-flex;
@@ -480,8 +493,18 @@ h1 {
   background: #0f8b8d;
 }
 
-.status-dot.disconnected {
+.status-dot.mock {
+  background: #6c5b7b;
+}
+
+.status-dot.disconnected,
+.status-dot.unavailable {
   background: #e4572e;
+}
+
+.status-dot.connecting,
+.status-dot.waiting {
+  background: #b9a44c;
 }
 
 @media (max-width: 960px) {

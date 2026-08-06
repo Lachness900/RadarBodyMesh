@@ -11,18 +11,24 @@ export default function App() {
   const [sourceOptions, setSourceOptions] = useState({
     default_source: "mock",
     replay_files: [],
+    loaded: false,
   });
   const [sourceSelection, setSourceSelection] = useState({
     source: "mock",
     replayFile: "",
   });
-  const { message, status } = usePredictionStream(sourceSelection);
+  const { error: streamError, message, status } = usePredictionStream(sourceSelection);
   const [pointMode, setPointMode] = useState("projected_radar");
   const updatedAt = useMemo(() => {
     const timestamp = message?.timestamp_ms || 0;
     return `${(timestamp / 1000).toFixed(1)}s`;
   }, [message]);
-  const timestampLabel = message?.source === "replay" ? "Replay time" : message?.source === "live" ? "Radar time": "Mock time";
+  const timestampLabel =
+    message?.source === "replay"
+      ? "Replay time"
+      : message?.source === "live"
+        ? "Live time"
+        : "Mock time";
   const pointView = useMemo(() => {
     const pointSets = message.point_sets || {};
     const selected = pointSets[pointMode] || message.points || [];
@@ -45,7 +51,7 @@ export default function App() {
           data.replay_files?.find((file) => file.selected)?.path ||
           data.replay_files?.[0]?.path ||
           "";
-        setSourceOptions(data);
+        setSourceOptions({ ...data, loaded: true });
         setSourceSelection((current) => {
           if (current.source !== "mock" || current.replayFile) return current;
           return {
@@ -56,6 +62,11 @@ export default function App() {
       })
       .catch(() => {
         if (!isActive) return;
+        setSourceOptions((current) => ({
+          ...current,
+          loaded: true,
+          error: "Could not load input-source status from the backend.",
+        }));
         setSourceSelection({ source: "mock", replayFile: "" });
       });
     return () => {
@@ -91,6 +102,8 @@ export default function App() {
       <InputControls
         options={sourceOptions}
         selection={sourceSelection}
+        streamError={streamError}
+        streamStatus={status}
         onChange={setSourceSelection}
         onOptionsChange={setSourceOptions}
       />

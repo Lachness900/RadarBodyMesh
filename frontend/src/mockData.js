@@ -51,3 +51,26 @@ export function makeMockMessage(tick) {
     },
   };
 }
+
+/** Empty source-specific state shown while Replay or Live waits for real data. */
+export function makeWaitingMessage(source) {
+  return {
+    timestamp_ms: 0,
+    source,
+    prediction: {
+      label: "",
+      confidence: 0,
+      probabilities: Object.fromEntries(POSES.map((pose) => [pose.key, 0])),
+    },
+    points: [],
+    point_sets: {
+      projected_radar: [],
+      filtered_radar: [],
+      raw_radar: [],
+    },
+    metrics: {
+      fps: 0,
+      latency_ms: 0,
+    },
+  };
+}
