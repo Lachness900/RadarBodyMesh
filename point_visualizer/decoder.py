@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+import queue
+from selectors import DefaultSelector, EVENT_READ
 import socket
 import struct
 import threading
-import signal
-from typing import Tuple
-from selectors import DefaultSelector, EVENT_READ
-import queue
-
 
 import numpy as np
 
@@ -22,102 +18,153 @@ import numpy as np
 from zstandard import ZstdDecompressor
 
 
+UDP_HEADER = struct.Struct("<2sIH")
+UDP_SOF = b"::"
+UDP_EOF = b";;"
+MAX_UDP_PACKET_SIZE = 65_535
+
+
+def decode_udp_packet(packet: bytes) -> tuple[int, np.ndarray] | None:
+    """Decode one complete UDP datagram from ``PointCloudUDPBridge``.
+
+    The wire format is intentionally kept identical to the ROS2 bridge:
+    ``::`` + uint32 timestamp + uint16 payload length + int16 xyz + ``;;``.
+    Malformed or truncated datagrams are dropped instead of entering the model.
+    """
+
+    minimum_size = UDP_HEADER.size + len(UDP_EOF)
+    if len(packet) < minimum_size:
+        return None
+
+    sof, timestamp_us, payload_len = UDP_HEADER.unpack_from(packet)
+    if sof != UDP_SOF or payload_len % 6 != 0:
+        return None
+
+    expected_size = UDP_HEADER.size + payload_len + len(UDP_EOF)
+    if len(packet) != expected_size or packet[-len(UDP_EOF) :] != UDP_EOF:
+        return None
+
+    payload = packet[UDP_HEADER.size : UDP_HEADER.size + payload_len]
+    points = np.frombuffer(payload, dtype="<i2").reshape((-1, 3))
+    return timestamp_us, points.astype(np.float32) / 1000.0
+
+
 class UDPStreamReader:
-  def __init__(self, host: str = "239.255.0.1", port: int = 4200):
+    """Receive complete point-cloud UDP datagrams on a background thread."""
 
-    self.udp_sock_ = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    self.udp_sock_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    
-    self.udp_sock_.bind(('239.255.0.1', port))
-    self.udp_sock_.setblocking(False)
+    def __init__(
+        self,
+        host: str = "239.255.0.1",
+        port: int = 4200,
+        interface: str = "127.0.0.1",
+    ):
+        self.host = host
+        self.port = port
+        self.interface = interface
+        self.udp_sock_ = socket.socket(
+            socket.AF_INET,
+            socket.SOCK_DGRAM,
+            socket.IPPROTO_UDP,
+        )
+        self.udp_sock_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.udp_sock_.bind(("", port))
+        self.udp_sock_.setblocking(False)
 
-    # tell kernel to listen for packets from this host
-    mreq = struct.pack("4sl", socket.inet_aton(host), socket.INADDR_ANY)
-    self.udp_sock_.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        # Join the same multicast group used by PointCloudUDPBridge.
+        membership = struct.pack(
+            "=4s4s",
+            socket.inet_aton(host),
+            socket.inet_aton(interface),
+        )
+        self.udp_sock_.setsockopt(
+            socket.IPPROTO_IP,
+            socket.IP_ADD_MEMBERSHIP,
+            membership,
+        )
 
-    self.sel_ = DefaultSelector()
-    self.sel_.register(self.udp_sock_, EVENT_READ, self.__read_sock)
+        self.sel_ = DefaultSelector()
+        self.sel_.register(self.udp_sock_, EVENT_READ, self.__read_sock)
+        self.q: queue.Queue[tuple[int, np.ndarray] | None] = queue.Queue(5)
+        self.working_ = True
+        self._close_lock = threading.Lock()
+        self.sock_listener_thrd = threading.Thread(
+            target=self.__poll_loop,
+            name="mm-yoga-udp-reader",
+            daemon=True,
+        )
+        self.sock_listener_thrd.start()
+        print(f"Listening to UDP IP {host}:{port} on {interface} ...")
 
-    self.q:queue.Queue[Tuple] = queue.Queue(5)
+    def __enter__(self) -> "UDPStreamReader":
+        return self
 
-    self.header = struct.Struct("<2sIH")
-    self.SOF = b"::"
-    self.EOF = b";;"
+    def __exit__(self, *_args) -> None:
+        self.close()
 
-    self.working_ = True
-    self.sock_listener_thrd = threading.Thread(target=self.__poll_loop)
-    self.sock_listener_thrd.start()
+    def __poll_loop(self) -> None:
+        """Run the OS selector until ``close`` releases the socket."""
 
-    signal.signal(signal.SIGINT, self.__sigint_handler)
+        while self.working_:
+            try:
+                events = self.sel_.select(timeout=0.1)
+            except (OSError, ValueError):
+                break
+            for key, mask in events:
+                key.data(key.fileobj, mask)
 
-    print(f"Listening to UDP IP {host}:{port} ...")
+    def close(self) -> None:
+        """Stop receiving and release the selector, socket, and listener thread."""
 
-  def __sigint_handler(self, sig, frame):
-    self.__shutdown()
+        with self._close_lock:
+            if not self.working_:
+                return
+            self.working_ = False
+            try:
+                self.sel_.unregister(self.udp_sock_)
+            except (KeyError, ValueError):
+                pass
+            self.sel_.close()
+            self.udp_sock_.close()
+            if self.q.full():
+                try:
+                    self.q.get_nowait()
+                except queue.Empty:
+                    pass
+            self.q.put_nowait(None)
 
-  def __poll_loop(self):
-    """Background thread that runs the OS selector."""
-    while self.working_:
-      events = self.sel_.select(timeout=0.1)
-      for key, mask in events:
-        callback = key.data
-        callback(key.fileobj, mask)
+        if (
+            self.sock_listener_thrd.is_alive()
+            and threading.current_thread() is not self.sock_listener_thrd
+        ):
+            self.sock_listener_thrd.join(timeout=1.0)
 
-  def __shutdown(self):
-    self.working_ = False
-    self.sel_.unregister(self.udp_sock_)
-    self.q.shutdown()
-    self.udp_sock_.close()
-    self.sock_listener_thrd.join()
+    def __read_sock(self, sock: socket.socket, _mask: int) -> None:
+        try:
+            packet = sock.recv(MAX_UDP_PACKET_SIZE)
+        except (BlockingIOError, OSError):
+            return
 
-  def __read_sock(self, sock: socket.socket,  mask):
-    packet = sock.recv(1024)
+        decoded = decode_udp_packet(packet)
+        if decoded is None:
+            return
+        if self.q.full():
+            try:
+                self.q.get_nowait()
+            except queue.Empty:
+                pass
+        self.q.put_nowait(decoded)
 
-    # print(len(packet))
+    def frames(self, *, timeout_s: float = 2.0):
+        """Yield decoded frames, raising when no radar datagram arrives in time."""
 
-    if not packet:
-      self.__shutdown()
-    else:
-      if len(packet) < self.header.size + len(self.EOF):
-        return
-  
-      prefix_bytes = packet[:self.header.size]
-      sof_delim, timestamp_us, payload_len = self.header.unpack(prefix_bytes)
-      # print(self.header.unpack(prefix_bytes))
-  
-      if sof_delim != self.SOF:
-        print(f"Warning: Invalid header {sof_delim}")
-        return
-  
-  
-      expected_packet_size = self.header.size + payload_len + 2
-      payload = packet[self.header.size : self.header.size + payload_len]
-      eof_delim = packet[self.header.size + payload_len : expected_packet_size]
-  
-      if eof_delim != self.EOF:
-        print(f"Warning: Invalid footer {eof_delim}")
-        return
-  
-  
-      pointcloud = np.frombuffer(payload, dtype=np.int16)
-      pointcloud = pointcloud.reshape((-1, 3)).astype(np.float32) / 1000
-
-      t = (timestamp_us, pointcloud)
-      if self.q.qsize() >= 5:
-        self.q.get_nowait()
-
-      self.q.put_nowait(t)
-
-  def frames(self):
-    while True:
-      try:
-        yield self.q.get(timeout=2.0)
-      except queue.Empty:
-        raise TimeoutError("No UDP radar data received")
-      except queue.ShutDown:
-        break
-
-    return 
+        while self.working_ or not self.q.empty():
+            try:
+                item = self.q.get(timeout=timeout_s)
+            except queue.Empty as exc:
+                raise TimeoutError("No UDP radar data received") from exc
+            if item is None:
+                break
+            yield item
 
 
 class ReaderParserError(Exception):
@@ -182,7 +229,6 @@ class DatReader:
 
 
 if __name__ == "__main__":
-   udp_reader = UDPStreamReader()
-
-   for timestamp, pc_data in udp_reader.frames():
-      print(timestamp, pc_data.shape)
+    with UDPStreamReader() as udp_reader:
+        for timestamp, pc_data in udp_reader.frames():
+            print(timestamp, pc_data.shape)

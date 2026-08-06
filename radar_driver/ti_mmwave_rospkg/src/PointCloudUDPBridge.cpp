@@ -1,6 +1,9 @@
 #include "PointCloudUDPBridge.h"
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 
+#include <cerrno>
+#include <cstring>
+#include <limits>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -82,12 +85,21 @@ void PointCloudUdpBridge::pointcloud_callback(
     points.emplace_back(point);
   }
 
+  const size_t payload_bytes = points.size() * sizeof(PointShort);
+  if (payload_bytes > std::numeric_limits<uint16_t>::max()) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "Point cloud payload is too large for the UDP packet: %zu bytes",
+                 payload_bytes);
+    return;
+  }
+
   uint32_t timestamp_us = this->get_clock()->now().nanoseconds() / 1000;
-  uint16_t payload_size = points.size() * sizeof(PointShort);
+  uint16_t payload_size = static_cast<uint16_t>(payload_bytes);
   // header | timestamp | pointcloud data | footer
   size_t packet_size = 2 + sizeof(timestamp_us) + sizeof(payload_size) + payload_size + 2;
   std::vector<std::byte> packet(packet_size);
-  RCLCPP_INFO(this->get_logger(), "Pointcloud Size: %d. Payload Size:%ld", payload_size, packet_size);
+  RCLCPP_DEBUG(this->get_logger(), "Pointcloud payload: %u bytes; packet: %zu bytes",
+               static_cast<unsigned int>(payload_size), packet_size);
 
   size_t index = 0;
 
@@ -106,6 +118,13 @@ void PointCloudUdpBridge::pointcloud_callback(
   ssize_t sent =
       sendto(udp_sock_, packet.data(), packet.size(), 0,
              (struct sockaddr *)&broadcast_addr_, sizeof(broadcast_addr_));
+  if (sent < 0) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to send UDP point cloud: %s",
+                 std::strerror(errno));
+  } else if (static_cast<size_t>(sent) != packet.size()) {
+    RCLCPP_WARN(this->get_logger(), "Incomplete UDP point cloud send: %zd/%zu bytes",
+                sent, packet.size());
+  }
 }
 
 int main(int argc, char **argv) {
