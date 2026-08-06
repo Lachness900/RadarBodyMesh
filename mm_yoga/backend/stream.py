@@ -24,7 +24,7 @@ from mm_yoga.model.inference import (
     SklearnPoseClassifier,
 )
 
-CLASSIFIER_RADAR_BOUNDS: Bounds3D = ((2.0, 4.0), (-1.0, 2.0), (-1.5, 1.5))
+CLASSIFIER_RADAR_BOUNDS: Bounds3D = ((1.0, 4.0), (-1.0, 2.0), (-1.5, 1.5))
 CLASSIFIER_BATCH_POINTS = 100
 DEFAULT_PREDICTION_INTERVAL_MS = float(
     os.getenv("MMYOGA_PREDICTION_INTERVAL_MS", "500")
@@ -129,8 +129,8 @@ def _smooth_prediction(
         probabilities = dict(current.probabilities)
     else:
         probabilities = {
-            label: current.probabilities.get(label, 0.0) * 0.2
-            + previous.probabilities.get(label, 0.0) * 0.8
+            label: current.probabilities.get(label, 0.0) * 0.1
+            + previous.probabilities.get(label, 0.0) * 0.9
             for label in current.probabilities
         }
     label = max(probabilities, key=probabilities.get)
