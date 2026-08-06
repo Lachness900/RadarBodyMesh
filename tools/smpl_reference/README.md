@@ -30,11 +30,7 @@ Install the project requirements, then generate all frontend assets:
 
 The dashboard includes references for:
 
-- T Pose
 - Standing Pose
-- Warrior Pose 1
-- Warrior Pose 2
+- T Pose
+- Squat Pose
 - Angle Pose
-
-`Other Pose` has no single reference because it represents many unrelated
-movements.

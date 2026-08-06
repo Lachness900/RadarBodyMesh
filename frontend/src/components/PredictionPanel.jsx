@@ -20,9 +20,7 @@ export function PredictionPanel({ prediction }) {
   const emptyReferenceLabel =
     pose.key === "waiting"
       ? "Waiting for radar data"
-      : pose.key === "other"
-        ? "No standard reference"
-        : "Reference not available yet";
+      : "Reference not available yet";
 
   return (
     <section className="panel prediction-panel">
