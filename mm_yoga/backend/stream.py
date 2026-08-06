@@ -167,6 +167,8 @@ class RadarStreamProcessor:
         self._last_prediction_timestamp_ms: float | None = None
         self.previous_timestamp_ms: float | None = None
         self.frame_intervals_ms: deque[float] = deque(maxlen=10)
+        with open("log.txt", "w"):
+            pass
 
     def process_frame(
         self,
@@ -225,6 +227,8 @@ class RadarStreamProcessor:
             self.last_prediction,
             self.current_prediction,
         )
+        with open("log.txt", "a") as file:
+            file.write(f"\n{self.last_prediction.label}")
 
         projected = projected_radar_points(self.display_history[-100:])
         return build_message(
