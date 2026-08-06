@@ -28,8 +28,8 @@ Important limitations:
 - Replay predictions use the preliminary trained model; mock mode remains synthetic.
 - Live mode requires the ROS2 radar driver and UDP bridge to be running.
 - The checkpoint still needs evaluation on outlier recordings such as `t_pose_1_1`.
-- The SMPL viewer includes the five recognized pose references. `Other Pose`
-  intentionally has no standard reference.
+- The SMPL viewer includes the four recognized pose references: Standing,
+  T Pose, Squat, and Angle.
 
 ## Project Structure
 
@@ -100,8 +100,7 @@ To regenerate them, place the trusted source SMPL file under
 
 The T Pose is the original SMPL template. The other poses use the same template
 with reviewed joint rotations. The source `.pkl` files stay local and ignored
-by Git. The viewer supports rotation, zoom, pan, and view reset. `Other Pose`
-has no reference because that class represents multiple unrelated poses.
+by Git. The viewer supports rotation, zoom, pan, and view reset.
 
 ## Backend
 
@@ -248,12 +247,10 @@ Example WebSocket message:
     "label": "standing_pose",
     "confidence": 0.89,
     "probabilities": {
+      "standing_pose": 0.85,
       "t_pose": 0.03,
-      "standing_pose": 0.89,
-      "warrior_1_pose": 0.02,
-      "warrior_2_pose": 0.02,
-      "angle_pose": 0.02,
-      "other": 0.02
+      "squat": 0.07,
+      "angle_pose": 0.05
     }
   },
   "points": [
@@ -291,26 +288,22 @@ the currently selected display mode.
 
 ## Pose Labels
 
-Current dashboard/model labels use the six classes stored in the checkpoint:
+Current dashboard/model labels use the four classes stored in the checkpoint:
 
 ```text
-t_pose
 standing_pose
-warrior_1_pose
-warrior_2_pose
+t_pose
+squat
 angle_pose
-other
 ```
 
 Use these exact snake_case keys for dataset metadata, backend predictions, and
 future model outputs. They match the current collection plan:
 
-- T pose
 - Standing pose
-- Warrior Pose 1
-- Warrior Pose 2
+- T pose
+- Squat pose
 - Angle pose
-- Other or unrelated poses
 
 ## Original Python Visualizer
 

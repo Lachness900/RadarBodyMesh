@@ -22,6 +22,57 @@ import torch.nn as nn
 
 
 class PoseCNN(nn.Module):
+    """Current checkpoint architecture: two input planes and 128-dim embedding."""
+
+    def __init__(
+        self,
+        num_classes: int,
+        grid_size: int = 32,
+        in_channels: int = 2,
+    ):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+        )
+        final_spatial = grid_size // 8
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(0.3),
+            nn.Linear(128 * final_spatial * final_spatial, 128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(128, num_classes),
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        return self.classifier(x)
+
+
+class LegacyPoseCNN(nn.Module):
+    """Older single-plane checkpoint architecture kept for compatibility."""
+
     def __init__(self, num_classes: int, grid_size: int):
         super().__init__()
         self.features = nn.Sequential(
@@ -56,26 +107,69 @@ class PoseClassifier:
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         self.label_names = list(ckpt["label_names"])
         self.grid_size = int(ckpt["grid_size"])
-        self.lo = np.asarray(ckpt["grid_bounds_lo"], dtype=np.float64)
-        self.hi = np.asarray(ckpt["grid_bounds_hi"], dtype=np.float64)
+        self.in_channels = int(ckpt.get("in_channels", 1))
+        self.yz_lo = np.asarray(
+            ckpt.get("grid_bounds_yz_lo", ckpt.get("grid_bounds_lo")),
+            dtype=np.float64,
+        )
+        self.yz_hi = np.asarray(
+            ckpt.get("grid_bounds_yz_hi", ckpt.get("grid_bounds_hi")),
+            dtype=np.float64,
+        )
+        self.xz_lo = np.asarray(
+            ckpt.get("grid_bounds_xz_lo", self.yz_lo),
+            dtype=np.float64,
+        )
+        self.xz_hi = np.asarray(
+            ckpt.get("grid_bounds_xz_hi", self.yz_hi),
+            dtype=np.float64,
+        )
 
-        self.model = PoseCNN(num_classes=len(self.label_names), grid_size=self.grid_size)
+        state = ckpt["model_state_dict"]
+        if "features.14.weight" in state:
+            self.model = PoseCNN(
+                num_classes=len(self.label_names),
+                grid_size=self.grid_size,
+                in_channels=self.in_channels,
+            )
+        else:
+            self.model = LegacyPoseCNN(
+                num_classes=len(self.label_names),
+                grid_size=self.grid_size,
+            )
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.model.eval()
 
-    def rasterize(self, yz_points: np.ndarray) -> np.ndarray:
+    def _rasterize(
+        self,
+        plane_points: np.ndarray,
+        lo: np.ndarray,
+        hi: np.ndarray,
+    ) -> np.ndarray:
+        """Normalize one 2D plane into a density grid for the CNN."""
+
         hist, _, _ = np.histogram2d(
-            yz_points[:, 0], yz_points[:, 1],
+            plane_points[:, 0],
+            plane_points[:, 1],
             bins=self.grid_size,
-            range=[[self.lo[0], self.hi[0]], [self.lo[1], self.hi[1]]],
+            range=[[lo[0], hi[0]], [lo[1], hi[1]]],
         )
         if hist.sum() > 0:
             hist = hist / hist.sum()
         return hist.astype(np.float32)
 
-    def predict(self, yz_points: np.ndarray):
-        grid = self.rasterize(yz_points)
-        tensor = torch.from_numpy(grid).unsqueeze(0).unsqueeze(0).float()  # (1, 1, H, W)
+    def rasterize(self, points: np.ndarray) -> np.ndarray:
+        """Rasterize xyz points into the checkpoint's input planes."""
+
+        if self.in_channels == 2:
+            xz = self._rasterize(points[:, [0, 2]], self.xz_lo, self.xz_hi)
+            yz = self._rasterize(points[:, [1, 2]], self.yz_lo, self.yz_hi)
+            return np.stack([xz, yz], axis=0)
+        return self._rasterize(points[:, [1, 2]], self.yz_lo, self.yz_hi)
+
+    def predict(self, points: np.ndarray):
+        grid = self.rasterize(points)
+        tensor = torch.from_numpy(grid).unsqueeze(0).float()  # (1, C, H, W)
         with torch.no_grad():
             logits = self.model(tensor)
             probs = torch.softmax(logits, dim=1)[0]

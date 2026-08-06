@@ -9,10 +9,9 @@ from numpy.typing import NDArray
 
 
 POSE_LABELS = (
-    "t_pose",
     "standing_pose",
-    "warrior_1_pose",
-    "warrior_2_pose",
+    "t_pose",
+    "squat",
     "angle_pose",
 )
 
@@ -101,65 +100,26 @@ def _standing_pose() -> NDArray[np.float64]:
     return pose
 
 
-def _recorded_warrior_stance(pose: NDArray[np.float64]) -> None:
-    """Apply the side lunge used in the recorded Warrior Pose trials."""
-
-    # The subject's bent leg appears on the left of the recorded front view.
-    # The hip/knee rotations cancel at the shin so the knee remains close to
-    # the ankle instead of collapsing sideways.
-    _set_joint(pose, "left_hip", z=27)
-    _set_joint(pose, "right_hip", z=-60)
-    _set_joint(pose, "right_knee", z=60)
-    _set_joint(pose, "right_ankle", y=-82)
-    _set_joint(pose, "left_ankle", z=-27)
-
-
-def _warrior_1_pose() -> NDArray[np.float64]:
-    """High lunge with both straight arms raised overhead."""
+def _squat_pose() -> NDArray[np.float64]:
+    """Deep squat with knees bent, torso upright, and arms forward."""
 
     pose = np.zeros((24, 3), dtype=np.float64)
 
-    # Build the lunge in the body's sagittal plane, then turn the whole body
-    # toward the front foot. This keeps the chest aligned with the feet rather
-    # than facing sideways as it does in Warrior II.
-    _set_joint(pose, "pelvis", y=-90)
-    _set_joint(pose, "left_hip", x=55)
-    _set_joint(pose, "left_ankle", x=-55)
-    _set_joint(pose, "right_hip", x=-80)
-    _set_joint(pose, "right_knee", x=80)
+    # Flex both hips and knees to lower the body while the ankles dorsiflex so
+    # the soles stay flat on the floor.
+    _set_joint(pose, "left_hip", x=85)
+    _set_joint(pose, "right_hip", x=85)
+    _set_joint(pose, "left_knee", x=85)
+    _set_joint(pose, "right_knee", x=85)
+    _set_joint(pose, "left_ankle", x=-35)
+    _set_joint(pose, "right_ankle", x=-35)
 
-    # Raise the shoulder girdle and arms together. The canonical SMPL palms
-    # otherwise face away from each other here, so spread a 180-degree
-    # longitudinal turn across each shoulder, elbow, and wrist. This brings the
-    # palms face-to-face without directly deforming the fixed finger geometry.
-    _set_joint(pose, "left_collar", z=10)
-    _set_joint(pose, "right_collar", z=-10)
-    _set_joint(pose, "left_shoulder", x=-60, z=94.5)
-    _set_joint(pose, "right_shoulder", x=60, z=-94.5)
-    _set_joint(pose, "left_elbow", x=-60)
-    _set_joint(pose, "right_elbow", x=60)
-    _set_joint(pose, "left_wrist", x=-60)
-    _set_joint(pose, "right_wrist", x=60)
-    return pose
-
-
-def _warrior_2_pose() -> NDArray[np.float64]:
-    """Wide lunge with both arms straight and horizontally opposed."""
-
-    pose = np.zeros((24, 3), dtype=np.float64)
-    _recorded_warrior_stance(pose)
-
-    # Warrior II uses a deeper, wider lunge than the recorded reverse-warrior
-    # preset. The front shin stays nearly vertical with its knee at about 90
-    # degrees, while the straight back leg reaches the same ground plane.
-    _set_joint(pose, "left_hip", z=55)
-    _set_joint(pose, "left_ankle", z=-55)
-    _set_joint(pose, "right_hip", z=-80)
-    _set_joint(pose, "right_knee", z=80)
-
-    # Keep the chest facing forward and turn the gaze toward the bent-leg side.
-    _set_joint(pose, "neck", y=-18)
-    _set_joint(pose, "head", y=-27)
+    # Keep the chest upright and extend both arms forward for balance.
+    _set_joint(pose, "spine1", x=8)
+    _set_joint(pose, "spine2", x=6)
+    _set_joint(pose, "neck", x=-8)
+    _set_joint(pose, "left_shoulder", x=-75)
+    _set_joint(pose, "right_shoulder", x=75)
     return pose
 
 
@@ -196,10 +156,9 @@ def get_pose_axis_angles(pose_label: str) -> NDArray[np.float64]:
     """Return all 24 SMPL local rotations for one approved project label."""
 
     presets = {
-        "t_pose": lambda: np.zeros((24, 3), dtype=np.float64),
         "standing_pose": _standing_pose,
-        "warrior_1_pose": _warrior_1_pose,
-        "warrior_2_pose": _warrior_2_pose,
+        "t_pose": lambda: np.zeros((24, 3), dtype=np.float64),
+        "squat": _squat_pose,
         "angle_pose": _angle_pose,
     }
     try:

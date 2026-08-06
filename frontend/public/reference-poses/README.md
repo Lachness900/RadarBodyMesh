@@ -1,7 +1,10 @@
 # SMPL Reference Assets
 
-The five `.glb` files in this directory are tracked frontend assets. They are
+The four `.glb` files in this directory are tracked frontend assets. They are
 static reference demonstrations and are not generated from live radar data.
+
+Current references: Standing, T Pose, Squat, and Angle. `Other Pose` does not
+have a reference file because it represents multiple unrelated poses.
 
 To regenerate them from the trusted local SMPL source:
 
