@@ -1,4 +1,4 @@
-"""Preprocessing utilities used by the replay backend."""
+"""Preprocessing utilities shared by replay and live radar sources."""
 
 from __future__ import annotations
 

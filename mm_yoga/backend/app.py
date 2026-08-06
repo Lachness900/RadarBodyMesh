@@ -1,13 +1,15 @@
-"""FastAPI backend for mmYoga replay inference and frontend WebSocket updates."""
+"""FastAPI backend for mmYoga radar inference and frontend WebSocket updates."""
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 import logging
 import os
 from pathlib import Path
 
 try:
-    from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
 except ModuleNotFoundError as exc:  # pragma: no cover - exercised by runtime setup
     raise SystemExit(
@@ -15,7 +17,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised by runtime se
         "`pip install -r requirements.txt`."
     ) from exc
 
-from mm_yoga.backend.live import async_live_messages
+from mm_yoga.backend.live import LiveRadarService, LiveRadarUnavailable
 from mm_yoga.backend.replay import (
     async_mock_messages,
     async_replay_messages,
@@ -33,9 +35,30 @@ DEFAULT_REPLAY_DIRS = [
     UPLOAD_REPLAY_DIR,
 ]
 logger = logging.getLogger("uvicorn.error")
-# The backend defaults to replay mode because the first dashboard milestone is
-# about showing an existing recording, not connecting live radar yet.
-app = FastAPI(title="mmYoga backend", version="0.1.0")
+LIVE_RADAR_HOST = os.getenv("MMYOGA_RADAR_HOST", "239.255.0.1")
+LIVE_RADAR_PORT = int(os.getenv("MMYOGA_RADAR_PORT", "4200"))
+LIVE_RADAR_INTERFACE = os.getenv("MMYOGA_RADAR_INTERFACE", "127.0.0.1")
+LIVE_RADAR_TIMEOUT_S = float(os.getenv("MMYOGA_RADAR_TIMEOUT", "5.0"))
+live_radar = LiveRadarService(
+    host=LIVE_RADAR_HOST,
+    port=LIVE_RADAR_PORT,
+    interface=LIVE_RADAR_INTERFACE,
+    receive_timeout_s=LIVE_RADAR_TIMEOUT_S,
+)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Release the UDP receiver thread when FastAPI shuts down."""
+
+    try:
+        yield
+    finally:
+        live_radar.stop()
+
+
+# Replay remains the deterministic default; Live is selected explicitly.
+app = FastAPI(title="mmYoga backend", version="0.2.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -111,6 +134,7 @@ def health() -> dict[str, object]:
         "replay_file": str(replay_path),
         "replay_available": replay_path.exists(),
         "model_file": str(_model_path()) if _model_path() else None,
+        "live": live_radar.status(),
     }
 
 
@@ -118,12 +142,19 @@ def health() -> dict[str, object]:
 def sources() -> dict[str, object]:
     replay_files = _available_replay_files()
     default_path = _replay_path()
+    live_status = live_radar.status()
     return {
         "default_source": "replay" if default_path.exists() else "mock",
         "default_replay_file": str(default_path),
         "sources": [
-            {"id": "mock", "label": "Mock"},
-            {"id": "replay", "label": "Replay"},
+            {"id": "mock", "label": "Mock", "enabled": True},
+            {"id": "replay", "label": "Replay", "enabled": True},
+            {
+                "id": "live",
+                "label": "Live Radar",
+                "enabled": True,
+                "status": live_status,
+            },
         ],
         "replay_files": [
             {
@@ -162,6 +193,14 @@ def latest(source: str = "auto", replay_file: str | None = None) -> dict[str, ob
     mode = _source_mode(source)
     if mode == "mock":
         return _mock_latest()
+    if mode == "live":
+        message = live_radar.latest_message
+        if message is not None:
+            return message
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "No live radar frame is available yet", **live_radar.status()},
+        )
 
     predictor = load_predictor(_model_path())
     replay_path = _selected_replay_path(replay_file)
@@ -175,14 +214,22 @@ def latest(source: str = "auto", replay_file: str | None = None) -> dict[str, ob
 @app.websocket("/ws/predictions")
 async def predictions(websocket: WebSocket) -> None:
     await websocket.accept()
-    predictor = load_predictor(_model_path())
     mode = _source_mode(websocket.query_params.get("source"))
     replay_path = _selected_replay_path(websocket.query_params.get("replay_file"))
     try:
         if mode == "mock":
             async for message in async_mock_messages():
                 await websocket.send_json(message)
+        elif mode == "live":
+            predictor = load_predictor(_model_path())
+            live_radar.start(
+                loop=asyncio.get_running_loop(),
+                predictor=predictor,
+            )
+            async for message in live_radar.messages():
+                await websocket.send_json(message)
         elif replay_path.exists():
+            predictor = load_predictor(_model_path())
             # Re-open the finite replay file after it reaches EOF so a dashboard
             # can stay connected during demos.
             while True:
@@ -192,18 +239,17 @@ async def predictions(websocket: WebSocket) -> None:
                     playback_speed=float(os.getenv("MMYOGA_PLAYBACK_SPEED", "1.0")),
                 ):
                     await websocket.send_json(message)
-        elif mode == "live":
-            try:
-                async for message in async_live_messages(predictor=predictor):
-                    await websocket.send_json(message)
-            except TimeoutError:
-                print("Radar unavailable, fallback to mock")
-
-                async for message in async_mock_messages():
-                    await websocket.send_json(message)
+        elif mode == "replay":
+            await websocket.close(code=1008, reason="Selected replay file was not found")
         else:
             # Development fallback when the recording is not present locally.
             async for message in async_mock_messages():
                 await websocket.send_json(message)
+    except LiveRadarUnavailable as exc:
+        logger.warning("Live Radar unavailable: %s", exc)
+        try:
+            await websocket.close(code=1013, reason=str(exc)[:120])
+        except RuntimeError:
+            pass
     except (RuntimeError, WebSocketDisconnect):
         return
