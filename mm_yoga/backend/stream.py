@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+import os
 import time
 from typing import Optional
 
@@ -25,6 +26,9 @@ from mm_yoga.model.inference import (
 
 CLASSIFIER_RADAR_BOUNDS: Bounds3D = ((2.0, 4.0), (-1.0, 2.0), (-1.5, 1.5))
 CLASSIFIER_BATCH_POINTS = 100
+DEFAULT_PREDICTION_INTERVAL_MS = float(
+    os.getenv("MMYOGA_PREDICTION_INTERVAL_MS", "500")
+)
 
 
 def build_message(
@@ -149,15 +153,18 @@ class RadarStreamProcessor:
         *,
         predictor: MockPosePredictor | CNNPoseClassifier | SklearnPoseClassifier,
         source: str,
+        prediction_interval_ms: float = DEFAULT_PREDICTION_INTERVAL_MS,
     ) -> None:
         self.predictor = predictor
         self.source = source
+        self.prediction_interval_ms = max(0.0, prediction_interval_ms)
         self.raw_history = np.empty((0, 3), dtype=np.float64)
         self.display_history = np.empty((0, 3), dtype=np.float64)
         self.classifier_pending = np.empty((0, 3), dtype=np.float64)
         self.current_prediction: PredictionResult | None = None
         self.last_prediction: PredictionResult | None = None
         self.last_inference_latency_ms = 0.0
+        self._last_prediction_timestamp_ms: float | None = None
         self.previous_timestamp_ms: float | None = None
         self.frame_intervals_ms: deque[float] = deque(maxlen=10)
 
@@ -193,11 +200,23 @@ class RadarStreamProcessor:
         if len(self.classifier_pending) >= CLASSIFIER_BATCH_POINTS:
             # This matches the trained visualizer: classify all accumulated real
             # points, then consume exactly one 100-point batch from the buffer.
-            self.current_prediction, self.last_inference_latency_ms = predict_points(
-                self.predictor,
-                self.classifier_pending,
+            # Prediction cadence is throttled so the pose result stays stable
+            # while the point cloud keeps streaming at full frame rate.
+            should_predict = (
+                self.prediction_interval_ms <= 0
+                or self._last_prediction_timestamp_ms is None
+                or timestamp_ms - self._last_prediction_timestamp_ms
+                >= self.prediction_interval_ms
             )
-            self.classifier_pending = self.classifier_pending[CLASSIFIER_BATCH_POINTS:]
+            if should_predict:
+                self.current_prediction, self.last_inference_latency_ms = predict_points(
+                    self.predictor,
+                    self.classifier_pending,
+                )
+                self._last_prediction_timestamp_ms = timestamp_ms
+                self.classifier_pending = self.classifier_pending[
+                    CLASSIFIER_BATCH_POINTS:
+                ]
 
         fps = self._update_fps(timestamp_ms)
         if self.current_prediction is None:

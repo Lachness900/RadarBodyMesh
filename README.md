@@ -151,10 +151,14 @@ MMYOGA_RADAR_HOST=239.255.0.1
 MMYOGA_RADAR_PORT=4200
 MMYOGA_RADAR_INTERFACE=127.0.0.1
 MMYOGA_RADAR_TIMEOUT=5.0
+MMYOGA_PREDICTION_INTERVAL_MS=500
 ```
 
 The backend uses `pose_classifier.pt` by default. Replay and Live require a
 valid configured checkpoint; Mock mode uses its deterministic mock predictor.
+`MMYOGA_PREDICTION_INTERVAL_MS` throttles how often the model runs: point clouds
+keep streaming at full frame rate while the pose result updates at most once per
+interval. Set it to `0` to restore a prediction on every frame.
 
 ### Radar Model Preprocessing
 
