@@ -17,8 +17,8 @@ from sklearn.svm import LinearSVC
 from sklearn.tree import DecisionTreeClassifier
 from zstandard import ZstdDecompressor
 
-BASE_PATH = 'other_ai_models/data'
-OUTPUT_PATH = 'other_ai_models/Split_models_seperate'
+BASE_PATH = 'other_ai_models/run_2'
+OUTPUT_PATH = 'other_ai_models/Simple_models'
 TEST_PATH = 'other_ai_models/test_data'
 MAX_POINTS = 100
 MAX_UPPER_POINTS = 60
@@ -94,20 +94,20 @@ class DatReader:
                 pass
 
 ## Simple filtering
-# def process_data(current_data: NDArray, data: NDArray):
-#     return append_recent_points(current_data, center_data(filter_data(data)), limit=MAX_POINTS)
+def process_data(current_data: NDArray, data: NDArray):
+    return append_recent_points(current_data, center_data(filter_data(data)), limit=MAX_POINTS)
 
 # Split filtering
-def process_data(current_data: NDArray, data: NDArray):
-    upper_points, lower_points = split_points(current_data)
-    upper_data, lower_data = split_points(center_data(filter_data(data)))
-    upper_points = append_recent_points(upper_points, upper_data, MAX_UPPER_POINTS)
-    lower_points = append_recent_points(lower_points, lower_data, MAX_LOWER_POINTS)
-    if upper_points.shape == (0,):
-        return lower_points
-    if lower_points.shape == (0,):
-        return upper_points
-    return np.concatenate((upper_points, lower_points), axis=0) 
+# def process_data(current_data: NDArray, data: NDArray):
+#     upper_points, lower_points = split_points(current_data)
+#     upper_data, lower_data = split_points(center_data(filter_data(data)))
+#     upper_points = append_recent_points(upper_points, upper_data, MAX_UPPER_POINTS)
+#     lower_points = append_recent_points(lower_points, lower_data, MAX_LOWER_POINTS)
+#     if upper_points.shape == (0,):
+#         return lower_points
+#     if lower_points.shape == (0,):
+#         return upper_points
+#     return np.concatenate((upper_points, lower_points), axis=0) 
 
 ## Exponentially weighted filtering
 # def process_data(current_data: NDArray, data: NDArray):
