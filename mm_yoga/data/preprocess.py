@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 Bound = Tuple[float, float]
 Bounds3D = Tuple[Bound, Bound, Bound]
 
-DEFAULT_RADAR_BOUNDS: Bounds3D = ((2.0, 4.0), (-1.0, 2.0), (-1.0, 1.0))
+DEFAULT_RADAR_BOUNDS: Bounds3D = ((-10.0, 10.0), (-10.0, 10.0), (-10.0, 10.0))
 DEFAULT_MAX_POINTS = 128
 
 
