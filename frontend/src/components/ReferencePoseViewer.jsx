@@ -86,6 +86,7 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
   const loaderRef = useRef(null);
   const loadedModelRef = useRef(null);
   const modelFrameRef = useRef(null);
+  const renderRef = useRef(null);
   const [rendererReady, setRendererReady] = useState(false);
   const [loadState, setLoadState] = useState(assetUrl ? "loading" : "unavailable");
 
@@ -94,8 +95,6 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return undefined;
-
-    let animationFrame = 0;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#f8fafc");
@@ -111,11 +110,21 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
       setLoadState("error");
       return undefined;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     mount.appendChild(renderer.domElement);
+
+    let renderFrame = 0;
+    const requestRender = () => {
+      if (renderFrame) return;
+      renderFrame = window.requestAnimationFrame(() => {
+        renderFrame = 0;
+        renderer.render(scene, camera);
+      });
+    };
+    renderRef.current = requestRender;
 
     scene.add(new THREE.HemisphereLight("#f8fbff", "#7f8b8c", 2.2));
     const keyLight = new THREE.DirectionalLight("#ffffff", 3.2);
@@ -131,35 +140,48 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
     scene.add(grid);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
+    // The reference mesh is static, so redraw only while the user interacts
+    // or when the model/viewport changes instead of running at 60 FPS forever.
+    controls.enableDamping = false;
     controls.enablePan = true;
     controls.screenSpacePanning = true;
+    controls.addEventListener("change", requestRender);
     controlsRef.current = controls;
     loaderRef.current = new GLTFLoader();
 
+    let lastWidth = 0;
+    let lastHeight = 0;
     const resize = () => {
       const rect = mount.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+      if (width === lastWidth && height === lastHeight) return;
+      lastWidth = width;
+      lastHeight = height;
+
       renderer.setSize(rect.width, rect.height, false);
       camera.aspect = rect.width / rect.height;
-      camera.updateProjectionMatrix();
+      if (modelFrameRef.current) {
+        // Browser zoom and window resizing change the horizontal field of
+        // view. Refit the model so it cannot end up outside the new canvas.
+        resetReferenceView(camera, controls, modelFrameRef.current);
+      } else {
+        camera.updateProjectionMatrix();
+      }
+      requestRender();
     };
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(mount);
     resize();
 
-    const animate = () => {
-      controls.update();
-      renderer.render(scene, camera);
-      animationFrame = window.requestAnimationFrame(animate);
-    };
-    animate();
+    requestRender();
     setRendererReady(true);
 
     return () => {
-      window.cancelAnimationFrame(animationFrame);
+      window.cancelAnimationFrame(renderFrame);
       resizeObserver.disconnect();
+      controls.removeEventListener("change", requestRender);
       controls.dispose();
       if (loadedModelRef.current) {
         scene.remove(loadedModelRef.current);
@@ -176,6 +198,7 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
       loaderRef.current = null;
       loadedModelRef.current = null;
       modelFrameRef.current = null;
+      if (renderRef.current === requestRender) renderRef.current = null;
     };
   }, []);
 
@@ -194,6 +217,7 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
       disposeModel(loadedModelRef.current);
       loadedModelRef.current = null;
       modelFrameRef.current = null;
+      renderRef.current?.();
     }
 
     if (!assetUrl) {
@@ -217,6 +241,7 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
         loadedModelRef.current = model;
         modelFrameRef.current = centerModel(model);
         resetReferenceView(camera, controls, modelFrameRef.current);
+        renderRef.current?.();
         setLoadState("ready");
       },
       undefined,
@@ -236,6 +261,7 @@ export function ReferencePoseViewer({ assetUrl, emptyLabel, poseLabel }) {
       controlsRef.current,
       modelFrameRef.current,
     );
+    renderRef.current?.();
   };
 
   return (

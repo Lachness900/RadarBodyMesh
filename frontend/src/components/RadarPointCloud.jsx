@@ -162,6 +162,7 @@ export function RadarPointCloud({ mode, onModeChange, points, pointSets, viewKey
   const cameraRef = useRef(null);
   const controlsRef = useRef(null);
   const cloudRef = useRef(null);
+  const renderRef = useRef(null);
   const fittedViewKeyRef = useRef(null);
 
   useEffect(() => {
@@ -178,15 +179,27 @@ export function RadarPointCloud({ mode, onModeChange, points, pointSets, viewKey
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     mount.appendChild(renderer.domElement);
 
+    let renderFrame = 0;
+    const requestRender = () => {
+      if (renderFrame) return;
+      renderFrame = window.requestAnimationFrame(() => {
+        renderFrame = 0;
+        renderer.render(scene, camera);
+      });
+    };
+    renderRef.current = requestRender;
+
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
+    // Rendering only on control changes avoids a permanent 60 FPS WebGL loop.
+    // Damping is disabled because it requires continuous animation frames.
+    controls.enableDamping = false;
     // Allow free inspection by panning, rotating, and zooming. The Reset View
     // button restores the centered radar view when needed.
     controls.enablePan = true;
+    controls.addEventListener("change", requestRender);
     controlsRef.current = controls;
     resetCameraToRadarView(camera, controls);
 
@@ -212,23 +225,18 @@ export function RadarPointCloud({ mode, onModeChange, points, pointSets, viewKey
       renderer.setSize(rect.width, rect.height, false);
       camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
+      requestRender();
     };
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(mount);
     resize();
 
-    let animationFrame = 0;
-    const animate = () => {
-      // OrbitControls damping needs an animation loop even when data is static.
-      controls.update();
-      renderer.render(scene, camera);
-      animationFrame = window.requestAnimationFrame(animate);
-    };
-    animate();
+    requestRender();
 
     return () => {
-      window.cancelAnimationFrame(animationFrame);
+      window.cancelAnimationFrame(renderFrame);
       resizeObserver.disconnect();
+      controls.removeEventListener("change", requestRender);
       controls.dispose();
       cloud.geometry.dispose();
       material.dispose();
@@ -252,6 +260,7 @@ export function RadarPointCloud({ mode, onModeChange, points, pointSets, viewKey
       });
       renderer.dispose();
       renderer.domElement.remove();
+      if (renderRef.current === requestRender) renderRef.current = null;
     };
   }, []);
 
@@ -272,6 +281,7 @@ export function RadarPointCloud({ mode, onModeChange, points, pointSets, viewKey
       resetCameraToRadarView(camera, controls);
       fittedViewKeyRef.current = fitKey;
     }
+    renderRef.current?.();
   }, [mode, points, viewKey]);
 
   const resetView = () => {
@@ -280,6 +290,7 @@ export function RadarPointCloud({ mode, onModeChange, points, pointSets, viewKey
     if (!camera || !controls) return;
     resetCameraToRadarView(camera, controls);
     fittedViewKeyRef.current = viewKey || mode;
+    renderRef.current?.();
   };
 
   return (
