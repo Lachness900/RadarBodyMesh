@@ -101,25 +101,34 @@ def _standing_pose() -> NDArray[np.float64]:
 
 
 def _squat_pose() -> NDArray[np.float64]:
-    """Deep squat with knees bent, torso upright, and arms forward."""
+    """Shoulder-width squat with vertical shins and a forward torso hinge."""
 
     pose = np.zeros((24, 3), dtype=np.float64)
 
-    # Flex both hips and knees to lower the body while the ankles dorsiflex so
-    # the soles stay flat on the floor.
-    _set_joint(pose, "left_hip", x=85)
-    _set_joint(pose, "right_hip", x=85)
-    _set_joint(pose, "left_knee", x=85)
-    _set_joint(pose, "right_knee", x=85)
-    _set_joint(pose, "left_ankle", x=-35)
-    _set_joint(pose, "right_ankle", x=-35)
+    # Tilt the pelvis with the torso, then counter-rotate both hips so the
+    # thighs lower toward horizontal while the shins stay nearly vertical.
+    _set_joint(pose, "pelvis", x=15)
+    _set_joint(pose, "left_hip", x=-119.25, y=17, z=5)
+    _set_joint(pose, "right_hip", x=-123, y=-17, z=-5)
+    _set_joint(pose, "left_knee", x=104.25, z=40)
+    _set_joint(pose, "right_knee", x=108, z=-40)
 
-    # Keep the chest upright and extend both arms forward for balance.
-    _set_joint(pose, "spine1", x=8)
+    # Point both feet straight ahead. The small left-leg asymmetry compensates
+    # for the source SMPL mesh so both complete soles share one ground plane.
+    _set_joint(pose, "left_ankle", y=-60)
+    _set_joint(pose, "right_ankle", y=60)
+
+    # Distribute the remaining forward lean across the spine instead of one
+    # sharp waist bend, which avoids the inflated abdomen seen previously.
+    _set_joint(pose, "spine1", x=10)
     _set_joint(pose, "spine2", x=6)
-    _set_joint(pose, "neck", x=-8)
-    _set_joint(pose, "left_shoulder", x=-75)
-    _set_joint(pose, "right_shoulder", x=75)
+    _set_joint(pose, "spine3", x=3)
+    _set_joint(pose, "neck", x=-9)
+
+    # Rotate both straight arms forward in parallel. Elbows and wrists remain
+    # neutral so the hands stay separate and retain their original shape.
+    _set_joint(pose, "left_shoulder", y=-90)
+    _set_joint(pose, "right_shoulder", y=90)
     return pose
 
 
@@ -165,3 +174,16 @@ def get_pose_axis_angles(pose_label: str) -> NDArray[np.float64]:
         return presets[pose_label]()
     except KeyError as error:
         raise ValueError(f"No SMPL reference preset for {pose_label}") from error
+
+
+def get_pose_translation(pose_label: str) -> NDArray[np.float64]:
+    """Return the global root translation needed for one reference pose.
+
+    SMPL keeps the pelvis at the template origin, so poses that lower the body
+    (like a squat) would otherwise lift the feet off the floor. The squat
+    translation returns the feet to the same ground plane as the T pose.
+    """
+
+    if pose_label == "squat":
+        return np.array([0.0, -0.355, 0.0], dtype=np.float64)
+    return np.zeros(3, dtype=np.float64)

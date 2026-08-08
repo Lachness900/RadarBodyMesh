@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from pose_presets import POSE_LABELS, get_pose_axis_angles
+from pose_presets import POSE_LABELS, get_pose_axis_angles, get_pose_translation
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -167,6 +167,7 @@ def generate_pose_mesh(
                 pose2rot=True,
             )
         vertices = posed_vertices[0].cpu().numpy().astype(np.float64)
+        vertices = vertices + get_pose_translation(pose_label)
 
     if vertices.ndim != 2 or vertices.shape[1] != 3:
         raise ValueError(f"Expected vertices shaped (N, 3), got {vertices.shape}")
