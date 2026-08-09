@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import torch
@@ -32,7 +33,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 from sklearn.tree import DecisionTreeClassifier
 
-OUTPUT_PATH = 'other_ai_models/Simple_models'
+OUTPUT_PATH = 'Other_models'
 
 class PoseCNN(nn.Module):
     """
@@ -245,15 +246,16 @@ def evaluate_other_models(X, y, X_test, y_test):
             },
         ]
     print("Training")
-    for model in models:
-        model_pipeline = model["model"]
-        model_name = model["name"]
-        model_pipeline.fit(X, y)
-        evaluate_model(model_pipeline, model_name, X_test, y_test)
-        dump(model_pipeline, f"{OUTPUT_PATH}\\{model_name}.joblib")
+    model_num = len(models)
+    with ThreadPoolExecutor(max_workers=model_num) as executor:
+        for i in range(model_num):
+            executor.submit(evaluate_model, model=models[i], X=X, y=y, X_test=X_test, y_test=y_test)
     
 
-def evaluate_model(model, model_name, X_test, y_test):
+def evaluate_model(model,X, y, X_test, y_test):
+    model_pipeline = model["model"]
+    model_name = model["name"]
+    model_pipeline.fit(X, y)
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
     matrix = confusion_matrix(y_test, y_pred)
@@ -262,6 +264,8 @@ def evaluate_model(model, model_name, X_test, y_test):
     print(f"Accuracy: {accuracy:.2%}")
     print("Confusion Matrix: \n", matrix)
     print("  ")
+    dump(model_pipeline, f"{OUTPUT_PATH}\\{model_name}.joblib")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train a CNN pose classifier on rasterized radar grids")
