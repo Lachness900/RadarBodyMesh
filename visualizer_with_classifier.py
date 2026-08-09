@@ -367,9 +367,9 @@ def parse_args() -> argparse.Namespace:
 
 # Defines static boundaries around the movement area
 def filter_data(data: NDArray):
-    x_bound = (2, 4)
-    y_bound = (-1, 2)
-    z_bound = (-1.5, 1.5)
+    x_bound = (-10, 10)
+    y_bound = (-10, 10)
+    z_bound = (-10, 10)
     mask = (
         (data[:, 0] >= x_bound[0]) & (data[:, 0] <= x_bound[1]) &
         (data[:, 1] >= y_bound[0]) & (data[:, 1] <= y_bound[1]) &
@@ -385,19 +385,10 @@ def center_data(
     """
     Centres the average data to the point (0,0,1)
     """
-
-    radar_points = np.asarray(points, dtype=np.float64).copy()
-    if radar_points.size == 0:
+    p = np.asarray(points, dtype=np.float64)
+    if p.size == 0:
         return np.empty((0, 3), dtype=np.float64)
-    total_point = [0,0,0]
-    for point in points:
-        total_point[0] += point[0]
-        total_point[1] += point[1]
-        total_point[2] += point[2]
-    radar_points[:, 0] = radar_points[:, 0] - total_point[0]/len(points)
-    radar_points[:, 1] = radar_points[:, 1] - total_point[1]/len(points)
-    radar_points[:, 2] = radar_points[:, 2] - total_point[2]/len(points)
-    return radar_points
+    return p - p.mean(axis=0)
 
 
 def main() -> int:
@@ -420,9 +411,17 @@ def main() -> int:
         nonlocal dat_reader
         nonlocal plotter
         current_tick_us = 0
-        current_points = np.array([])
         # Set number of points to accumulate
         max_points = 100
+        pending = []
+        pending_count = 0
+        overflow = np.empty((0, 3), dtype=np.float64)
+
+        # Sets fps limit
+        max_render_fps = 30.0
+        min_render_interval = 1.0 / max_render_fps
+        last_render_time = 0.0
+
         try:
             for d in dat_reader.nextFrame():
                 msg_type = d["message_type"]
@@ -431,22 +430,30 @@ def main() -> int:
 
                 if msg_type == 2:
                     data = center_data(filter_data(msg))
-                    saved_points = len(current_points) + len(data)
-                    current_points = np.append(current_points, data).reshape(-1, 3)
-                    if saved_points >= max_points:
-                        points = current_points
+                    pending.append(data)
+                    pending_count += len(data)
 
-                        # Run live pose classification on this flush, using
-                        # the same X-Y-Z points (before X gets zeroed below)
-                        # that training-time extraction sampled from.
+                    saved_points = len(overflow) + pending_count
+                    if saved_points >= max_points:
+                        current_points = (
+                            np.concatenate([overflow] + pending, axis=0) if pending else overflow
+                        )
+                        points = current_points.copy()
+
                         if classifier is not None:
                             label, confidence, _ = classifier.predict(points)
                             plotter.update_prediction(label, confidence)
 
-                        points[:, 0] = 0
-                        plotter.update_data(data2=points)
-                        current_points = current_points[max_points:]
-                        QApplication.processEvents()
+                        now = time.time()
+                        if now - last_render_time >= min_render_interval:
+                            points[:, 0] = 0
+                            plotter.update_data(data2=points)
+                            QApplication.processEvents()
+                            last_render_time = now
+
+                        overflow = current_points[max_points:]
+                        pending = []
+                        pending_count = 0
                 elif msg_type == 1:
                     plotter.update_data(data1=msg)
 

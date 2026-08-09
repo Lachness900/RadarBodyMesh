@@ -42,9 +42,9 @@ MAX_POINTS = 100
 
 
 def filter_data(data: np.ndarray) -> np.ndarray:
-    x_bound = (2, 4)
-    y_bound = (-1, 2)
-    z_bound = (-1.5, 1.5)
+    x_bound = (-10, 10)
+    y_bound = (-10, 10)
+    z_bound = (-10, 10)
     mask = (
         (data[:, 0] >= x_bound[0]) & (data[:, 0] <= x_bound[1]) &
         (data[:, 1] >= y_bound[0]) & (data[:, 1] <= y_bound[1]) &
@@ -88,8 +88,10 @@ def iter_frames(path: Path):
 
 
 def extract_flush_samples(path: Path):
-    """Same rolling-buffer semantics as extract_training_data.py."""
-    current_points = np.empty((0, 3), dtype=np.float64)
+    pending = []
+    pending_count = 0
+
+    overflow = np.empty((0, 3), dtype=np.float64)
     last_ts = None
 
     for d in iter_frames(path):
@@ -99,14 +101,20 @@ def extract_flush_samples(path: Path):
         data = center_data(filter_data(d["point_cloud"]))
         last_ts = d["timestamp_us"]
 
-        saved_points = len(current_points) + len(data)
-        current_points = np.append(current_points, data).reshape(-1, 3)
+        pending.append(data)
+        pending_count += len(data)
 
+        saved_points = len(overflow) + pending_count
         if saved_points >= MAX_POINTS:
-            flush_points = current_points.copy()
-            xyz_points = flush_points[:, :3]  # keep X, Y, Z (X was previously dropped here)
+            current_points = (
+                np.concatenate([overflow] + pending, axis=0) if pending else overflow
+            )
+            xyz_points = current_points[:, :3].copy()
             yield last_ts, xyz_points
-            current_points = current_points[MAX_POINTS:]
+
+            overflow = current_points[MAX_POINTS:]
+            pending = []
+            pending_count = 0
 
 
 def main():
