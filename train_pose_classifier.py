@@ -20,18 +20,18 @@ from torch.utils.data import TensorDataset, DataLoader
 
 from pathlib import Path
 
-import numpy as np
-from joblib import dump
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, confusion_matrix
-from sklearn.naive_bayes import GaussianNB
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neural_network import MLPClassifier
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.svm import LinearSVC
-from sklearn.tree import DecisionTreeClassifier
+# import numpy as np
+# from joblib import dump
+# from sklearn.ensemble import RandomForestClassifier
+# from sklearn.linear_model import LogisticRegression
+# from sklearn.metrics import accuracy_score, confusion_matrix
+# from sklearn.naive_bayes import GaussianNB
+# from sklearn.neighbors import KNeighborsClassifier
+# from sklearn.neural_network import MLPClassifier
+# from sklearn.pipeline import make_pipeline
+# from sklearn.preprocessing import StandardScaler
+# from sklearn.svm import LinearSVC
+# from sklearn.tree import DecisionTreeClassifier
 
 OUTPUT_PATH = 'Other_models'
 
@@ -378,7 +378,7 @@ def main():
     }, args.out)
     print(f"\nSaved best model to {args.out}")
 
-    evaluate_other_models(X=X_train, y=y_train, X_test=X_val, y_test=y_val)
+    # evaluate_other_models(X=X_train, y=y_train, X_test=X_val, y_test=y_val)
 
 
 if __name__ == "__main__":
