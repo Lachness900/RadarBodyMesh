@@ -17,6 +17,22 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 
+from pathlib import Path
+
+import numpy as np
+from joblib import dump
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import LinearSVC
+from sklearn.tree import DecisionTreeClassifier
+
+OUTPUT_PATH = 'other_ai_models/Simple_models'
 
 class PoseCNN(nn.Module):
     """
@@ -162,6 +178,90 @@ def evaluate(model, loader, device, num_classes, label_names):
 
     return acc
 
+def evaluate_other_models(X, y, X_test, y_test):
+    models = [
+            {
+                "name": "K-Nearest Neighbour 5",
+                "model": make_pipeline(
+                            StandardScaler(),
+                            KNeighborsClassifier(n_neighbors=5)
+                        )
+            },
+            {
+                "name": "K-Nearest Neighbour 10",
+                "model": make_pipeline(
+                            StandardScaler(),
+                            KNeighborsClassifier(n_neighbors=10)
+                        )
+            },
+            {
+                "name": "K-Nearest Neighbour 15",
+                "model": make_pipeline(
+                            StandardScaler(),
+                            KNeighborsClassifier(n_neighbors=15)
+                        )
+            },
+            {
+                "name": "Decision Tree",
+                "model": make_pipeline(
+                            StandardScaler(),
+                            DecisionTreeClassifier()
+                        )
+            },
+            {
+                "name": "Random Forest",
+                "model": make_pipeline(
+                            StandardScaler(),
+                            RandomForestClassifier(random_state=45)
+                        )
+            },
+            {
+                "name": "Linear Support Vector Machine",
+                "model": make_pipeline(
+                            StandardScaler(),
+                            LinearSVC()
+                        )
+            },
+            {
+                "name": "Logistic Regression",
+                "model": make_pipeline(
+                            StandardScaler(),
+                            LogisticRegression(max_iter=1000)
+                        )
+            },
+            {
+                "name": "MLP Classifier",
+                "model": make_pipeline(
+                            StandardScaler(),
+                            MLPClassifier(max_iter=500)
+                        )
+            },
+            {
+                "name": "Gaussian NB",
+                "model": make_pipeline(
+                            StandardScaler(),
+                            GaussianNB()
+                        )
+            },
+        ]
+    print("Training")
+    for model in models:
+        model_pipeline = model["model"]
+        model_name = model["name"]
+        model_pipeline.fit(X, y)
+        evaluate_model(model_pipeline, model_name, X_test, y_test)
+        dump(model_pipeline, f"{OUTPUT_PATH}\\{model_name}.joblib")
+    
+
+def evaluate_model(model, model_name, X_test, y_test):
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    matrix = confusion_matrix(y_test, y_pred)
+
+    print("Training", model_name)
+    print(f"Accuracy: {accuracy:.2%}")
+    print("Confusion Matrix: \n", matrix)
+    print("  ")
 
 def main():
     parser = argparse.ArgumentParser(description="Train a CNN pose classifier on rasterized radar grids")
@@ -273,6 +373,8 @@ def main():
         "grid_bounds_xz_hi": d["grid_bounds_xz_hi"],
     }, args.out)
     print(f"\nSaved best model to {args.out}")
+
+    evaluate_other_models(X=X_train, y=y_train, X_test=X_val, y_test=y_val)
 
 
 if __name__ == "__main__":
