@@ -1,0 +1,12 @@
+matplotlib
+numpy
+PyOpenGL
+PyQt6
+pyqtgraph
+zstandard
+fastapi
+uvicorn[standard]
+pyvirtualcam
+torch
+smplx==0.1.28
+scikit-learn

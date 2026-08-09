@@ -1,0 +1,108 @@
+Takes about 40 mins to train
+
+Date Pipeline:
+3D points -> Filtering -> Centering -> Split points into upper and lower points -> model
+
+Order:
+Angle
+Other
+Standing
+T-pose
+Warrior_1
+Warrior_2
+
+Hyperparams:
+MAX_POINTS = 100
+MAX_UPPER_POINTS = 60
+MAX_LOWER_POINTS = 40
+Y_SPLIT = 0.7
+
+Training other_ai_models\Split_models_seperate\Decision Tree.joblib
+Accuracy: 24.92%
+Confusion Matrix: 
+ [[ 704 1729  849  270   90  215]
+ [ 327   86   75   21  109   51]
+ [ 320  613 1710  182  139  120]
+ [ 492  885  817  553  188  321]
+ [ 214  447  231  729 1146 1162]
+ [ 708  981  724  304  196  284]]
+  
+Training other_ai_models\Split_models_seperate\Gaussian NB.joblib
+Accuracy: 6.23%
+Confusion Matrix: 
+ [[  93 3748   16    0    0    0]
+ [   1  556  110    0    2    0]
+ [ 679 2305  100    0    0    0]
+ [ 373 2409  474    0    0    0]
+ [1421   35 1344    0  372  757]
+ [  92 3001  104    0    0    0]]
+  
+Training other_ai_models\Split_models_seperate\K-Nearest Neighbour 10.joblib
+Accuracy: 29.59%
+Confusion Matrix: 
+ [[1006 1504  373    0  972    2]
+ [ 375   43   11    0  240    0]
+ [ 900  579  614   71  920    0]
+ [1449  330  548   66  863    0]
+ [  78    0   26  229 3581   15]
+ [ 990  563  357   42 1231   14]]
+  
+Training other_ai_models\Split_models_seperate\K-Nearest Neighbour 15.joblib
+Accuracy: 29.81%
+Confusion Matrix: 
+ [[ 985 1454  344    0 1069    5]
+ [ 349   47    8    0  265    0]
+ [ 872  557  611   46  998    0]
+ [1439  294  514   57  952    0]
+ [  57    0   23  196 3648    5]
+ [ 962  500  339   35 1346   15]]
+  
+Training other_ai_models\Split_models_seperate\K-Nearest Neighbour 5.joblib
+Accuracy: 29.31%
+Confusion Matrix: 
+ [[ 974 1684  341    0  857    1]
+ [ 391   53   13    0  212    0]
+ [ 893  618  636  102  834    1]
+ [1494  383  563   75  739    2]
+ [  90    4   34  248 3515   38]
+ [ 986  739  342   61 1049   20]]
+  
+Training other_ai_models\Split_models_seperate\Linear Support Vector Machine.joblib
+Accuracy: 21.55%
+Confusion Matrix: 
+ [[ 611 3025  169   11   38    3]
+ [ 276   82  197    2   81   31]
+ [1387  955  642    4   90    6]
+ [1705  962  399    7  158   25]
+ [  13 1157  134  109 2478   38]
+ [ 909 1721  189   60  260   58]]
+  
+Training other_ai_models\Split_models_seperate\Logistic Regression.joblib
+Accuracy: 25.12%
+Confusion Matrix: 
+ [[ 753 2828  206    5   62    3]
+ [ 256   88  211    6   69   39]
+ [1410  938  606    1  123    6]
+ [1931  598  518    6  185   18]
+ [  23  586  204   80 3029    7]
+ [1053 1470  268   43  325   38]]
+  
+Training other_ai_models\Split_models_seperate\MLP Classifier.joblib
+Accuracy: 27.42%
+Confusion Matrix: 
+ [[ 384 2961  447   14   33   18]
+ [ 398  120   42    2   74   33]
+ [ 170 1450 1260  142   60    2]
+ [ 436 1876  466  273  145   60]
+ [   7  161  299  341 2728  393]
+ [ 516 1872  350  100  191  168]]
+  
+Training other_ai_models\Split_models_seperate\Random Forest.joblib
+Accuracy: 30.65%
+Confusion Matrix: 
+ [[ 344 2426 1073   12    0    2]
+ [ 415   48   68    4  133    1]
+ [ 144  416 2109  334   41   40]
+ [ 468 1287 1056  382   13   50]
+ [  27   56    5  533 2603  705]
+ [ 757 1448  803   70   91   28]]

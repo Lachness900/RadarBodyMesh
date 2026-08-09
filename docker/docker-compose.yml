@@ -1,0 +1,29 @@
+services:
+  my_ros2_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: custom_ros2_jazzy_image:latest
+    container_name: ti_mmwave_ros_container
+    volumes:
+    - ./radar_driver:/ros2_ws/src/radar_driver
+
+    network_mode: "host"
+    
+    environment:
+      - ROS_DOMAIN_ID=0
+      
+    tty: true
+    stdin_open: true
+
+    devices:
+      - "/dev/ttyACM0:/dev/ttyACM0"   # TI radar serial port
+      - "/dev/ttyACM1:/dev/ttyACM1"   # TI radar serial port
+
+    group_add:
+      - dialout 
+      - plugdev
+
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW

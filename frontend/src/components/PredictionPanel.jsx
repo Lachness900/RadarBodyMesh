@@ -1,0 +1,46 @@
+import { POSES, REFERENCE_POSES } from "../constants";
+import { ReferencePoseViewer } from "./ReferencePoseViewer";
+
+function getPoseMeta(label) {
+  return POSES.find((pose) => pose.key === label) || {
+    color: "#0f8b8d",
+    key: label,
+    label,
+  };
+}
+
+export function PredictionPanel({ prediction }) {
+  const confidence = Math.round((prediction?.confidence || 0) * 100);
+  const pose = prediction?.label
+    ? getPoseMeta(prediction.label)
+    : { color: "#8b989b", key: "waiting", label: "Waiting" };
+  const poseLabel = pose.label;
+  const isLongPose = poseLabel.length > 9;
+  const referenceAsset = REFERENCE_POSES[pose.key];
+  const emptyReferenceLabel =
+    pose.key === "waiting"
+      ? "Waiting for radar data"
+      : "Reference not available yet";
+
+  return (
+    <section className="panel prediction-panel">
+      <div className="panel-label">Current Pose</div>
+      <div className="prediction-content">
+        <div className={isLongPose ? "pose-name long" : "pose-name"} title={poseLabel}>
+          {poseLabel}
+        </div>
+        <ReferencePoseViewer
+          assetUrl={referenceAsset}
+          emptyLabel={emptyReferenceLabel}
+          poseLabel={poseLabel}
+        />
+        <div
+          className="confidence-ring"
+          style={{ "--pose-color": pose.color, "--value": `${confidence}%` }}
+        >
+          <span>{confidence}%</span>
+        </div>
+      </div>
+    </section>
+  );
+}
