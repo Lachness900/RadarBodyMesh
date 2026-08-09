@@ -160,7 +160,12 @@ class RadarStreamProcessor:
         self.prediction_interval_ms = max(0.0, prediction_interval_ms)
         self.raw_history = np.empty((0, 3), dtype=np.float64)
         self.display_history = np.empty((0, 3), dtype=np.float64)
-        self.classifier_pending = np.empty((0, 3), dtype=np.float64)
+        # Accumulate classifier frames as a list and only concatenate once a
+        # prediction runs, mirroring the optimized visualizer/batcher pipeline
+        # instead of copying the whole buffer on every frame.
+        self.classifier_pending_frames: list[np.ndarray] = []
+        self.classifier_pending_count = 0
+        self.classifier_overflow = np.empty((0, 3), dtype=np.float64)
         self.current_prediction: PredictionResult | None = None
         self.last_prediction: PredictionResult | None = None
         self.last_inference_latency_ms = 0.0
@@ -194,12 +199,11 @@ class RadarStreamProcessor:
             limit=128,
         )
         if len(classifier_points):
-            self.classifier_pending = np.concatenate(
-                [self.classifier_pending, classifier_points],
-                axis=0,
-            )
+            self.classifier_pending_frames.append(classifier_points)
+            self.classifier_pending_count += len(classifier_points)
 
-        batch_ready = len(self.classifier_pending) >= CLASSIFIER_BATCH_POINTS
+        pending_total = self.classifier_pending_count + len(self.classifier_overflow)
+        batch_ready = pending_total >= CLASSIFIER_BATCH_POINTS
         interval_ready = (
             self.prediction_interval_ms <= 0
             or self._last_prediction_timestamp_ms is None
@@ -211,7 +215,7 @@ class RadarStreamProcessor:
         # waiting many seconds to accumulate 100 points. Interval 0 keeps the
         # original 100-point batch behaviour.
         should_predict = (
-            len(self.classifier_pending) > 0
+            pending_total > 0
             and (
                 batch_ready
                 if self.prediction_interval_ms <= 0
@@ -219,14 +223,22 @@ class RadarStreamProcessor:
             )
         )
         if should_predict:
+            current_points = (
+                np.concatenate(
+                    [self.classifier_overflow] + self.classifier_pending_frames,
+                    axis=0,
+                )
+                if self.classifier_pending_frames
+                else self.classifier_overflow
+            )
             self.current_prediction, self.last_inference_latency_ms = predict_points(
                 self.predictor,
-                self.classifier_pending,
+                current_points,
             )
             self._last_prediction_timestamp_ms = timestamp_ms
-            self.classifier_pending = self.classifier_pending[
-                CLASSIFIER_BATCH_POINTS:
-            ]
+            self.classifier_overflow = current_points[CLASSIFIER_BATCH_POINTS:]
+            self.classifier_pending_frames = []
+            self.classifier_pending_count = 0
 
         fps = self._update_fps(timestamp_ms)
         if self.current_prediction is None:

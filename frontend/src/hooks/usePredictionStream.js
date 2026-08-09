@@ -15,9 +15,11 @@ export function usePredictionStream(sourceSelection) {
   useEffect(() => {
     let websocket;
     let mockTimer;
+    let flushTimer;
     let tick = 1;
     let isActive = true;
     let terminalError = "";
+    let latestMessage = null;
     const selectedSource = sourceSelection.source || "mock";
     setError("");
 
@@ -25,6 +27,34 @@ export function usePredictionStream(sourceSelection) {
       setMessage(makeWaitingMessage(selectedSource));
       setStatus("connecting");
     }
+
+    // Coalesce high-rate WebSocket frames so React re-renders at most ~30 fps,
+    // mirroring the offline visualizer's capped render rate. The latest frame
+    // is always kept, so the dashboard never shows stale data.
+    const FLUSH_INTERVAL_MS = 33;
+    const scheduleFlush = () => {
+      if (flushTimer) return;
+      flushTimer = window.setInterval(() => {
+        if (!isActive) return;
+        if (latestMessage) {
+          setMessage(latestMessage);
+          latestMessage = null;
+        } else {
+          window.clearInterval(flushTimer);
+          flushTimer = undefined;
+        }
+      }, FLUSH_INTERVAL_MS);
+    };
+    const flushNow = () => {
+      if (latestMessage) {
+        setMessage(latestMessage);
+        latestMessage = null;
+      }
+      if (flushTimer) {
+        window.clearInterval(flushTimer);
+        flushTimer = undefined;
+      }
+    };
 
     const startMock = () => {
       if (!isActive || mockTimer || selectedSource !== "mock") return;
@@ -66,7 +96,8 @@ export function usePredictionStream(sourceSelection) {
           websocket.close();
           return;
         }
-        setMessage(nextMessage);
+        latestMessage = nextMessage;
+        scheduleFlush();
         setStatus("connected");
         setError("");
       };
@@ -76,6 +107,7 @@ export function usePredictionStream(sourceSelection) {
       };
       websocket.onclose = (event) => {
         if (!isActive) return;
+        flushNow();
         if (selectedSource === "mock") {
           startMock();
         } else {
@@ -94,6 +126,7 @@ export function usePredictionStream(sourceSelection) {
 
     return () => {
       isActive = false;
+      if (flushTimer) window.clearInterval(flushTimer);
       if (websocket) websocket.close();
       if (mockTimer) window.clearInterval(mockTimer);
     };
