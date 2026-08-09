@@ -1,6 +1,6 @@
 Takes about 20 mins to train
 
-Date Pipeline:
+Date Pipeline: (Happens every 100 points)
 3D points -> Filtering -> Centering -> model
 
 Order:
@@ -49,7 +49,7 @@ Confusion Matrix:
  [  0 487 131   0]
  [  0 458 178   5]]
 
-Training K-Nearest Neighbour 10 
+Training K-Nearest Neighbour 10
 Accuracy: 30.42%
 Confusion Matrix: 
  [[  5 652   0   0]

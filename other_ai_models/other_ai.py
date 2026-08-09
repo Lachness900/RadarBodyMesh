@@ -79,17 +79,15 @@ class DatReader:
             return None
     # Change size to (0, 4) if using exponential
     def accumulateFrame(self):
-        returned_points = np.empty((0, 3), dtype=np.float64)
         current_points = np.empty((0, 3), dtype=np.float64)
         for d in self.nextFrame():
             msg_type = d["message_type"]
             msg = d["point_cloud"]
             if msg_type == 2:
                 current_points = process_data(current_points, msg)
-                if len(current_points) == MAX_POINTS:
-
-                    returned_points = np.append(returned_points, current_points)
-                    yield current_points
+                if len(current_points) >= MAX_POINTS:
+                    yield current_points[:MAX_POINTS]
+                    current_points = current_points[MAX_POINTS:]
             elif msg_type == 1:
                 pass
 
@@ -139,9 +137,9 @@ def split_points(
 
 # Defines static boundaries around the movement area
 def filter_data(data: NDArray):
-    x_bound = (1, 4)
-    y_bound = (-1, 2)
-    z_bound = (-1.5, 1.5)
+    x_bound = (-10, 10)
+    y_bound = (-10, 10)
+    z_bound = (-10, 10)
 
     mask = (
         (data[:, 0] >= x_bound[0]) & (data[:, 0] <= x_bound[1]) &
@@ -179,7 +177,7 @@ def append_recent_points(
     elif current.size == 0:
         return points[-limit:]
     
-    return np.concatenate([current, points], axis=0)[-limit:]
+    return np.concatenate([current, points], axis=0)
 
 def get_data(base_path):
     poses = [d for d in base_path.iterdir()]
