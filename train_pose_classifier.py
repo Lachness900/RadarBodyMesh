@@ -247,9 +247,8 @@ def evaluate_other_models(X, y, X_test, y_test):
         ]
     print("Training")
     model_num = len(models)
-    with ThreadPoolExecutor(max_workers=model_num) as executor:
-        for i in range(model_num):
-            executor.submit(evaluate_model, model=models[i], X=X, y=y, X_test=X_test, y_test=y_test)
+    for i in range(model_num):
+        evaluate_model(model=models[i], X=X, y=y, X_test=X_test, y_test=y_test)
     
 
 def evaluate_model(model,X, y, X_test, y_test):
@@ -378,7 +377,7 @@ def main():
     }, args.out)
     print(f"\nSaved best model to {args.out}")
 
-    evaluate_other_models(X=X_train, y=y_train, X_test=X_val, y_test=y_val)
+    # evaluate_other_models(X=X_train, y=y_train, X_test=X_val, y_test=y_val)
 
 
 if __name__ == "__main__":
