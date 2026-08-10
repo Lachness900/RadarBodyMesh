@@ -259,11 +259,14 @@ Build check:
 npm run build
 ```
 
-The frontend defaults to:
+The frontend automatically connects to port `8000` on the same computer that
+served the page. For example, these page and backend addresses are paired
+without manual configuration:
 
 ```text
-http://localhost:8000
-ws://localhost:8000/ws/predictions
+Dashboard: http://192.168.1.20:5173
+API:       http://192.168.1.20:8000
+WebSocket: ws://192.168.1.20:8000/ws/predictions
 ```
 
 Override backend URLs if needed:
@@ -275,6 +278,23 @@ npm run dev
 ```
 
 The former `VITE_MMYOGA_*` names remain supported as compatibility aliases.
+
+### Phone/Hotspot Demo
+
+Connect the computer to the phone hotspot, then start the backend with
+`--host 0.0.0.0` and run the frontend normally:
+
+```bash
+.venv/bin/uvicorn mm_yoga.backend.app:app --host 0.0.0.0 --port 8000
+
+cd frontend
+npm run dev
+```
+
+Vite prints both `Local` and `Network` addresses. Open the `Network` address,
+such as `http://172.20.10.2:5173`, on the phone. The dashboard derives the API
+and WebSocket host automatically, so no `VITE_*` variables or source edits are
+required. The computer firewall and hotspot must allow local-device traffic.
 
 Mock can fall back to local generated data when the backend is unavailable.
 Replay and Live instead show a disconnected or unavailable state, so synthetic
