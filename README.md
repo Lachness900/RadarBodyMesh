@@ -1,6 +1,6 @@
-# mmYoga: Privacy-Preserving mmWave Pose Matching
+# mmPose: Privacy-Preserving mmWave Pose Matching
 
-mmYoga is a COMP6733 IoT project for displaying and classifying body poses from mmWave radar point clouds. The repository contains the TI radar driver, the team's offline `.dat` visualizer, and a web dashboard for Mock, recorded Replay, and Live Radar input.
+mmPose is a COMP6733 IoT project for displaying and classifying body poses from mmWave radar point clouds. The repository contains the TI radar driver, the team's offline `.dat` visualizer, and a web dashboard for Mock, recorded Replay, and Live Radar input.
 
 Replay remains useful for repeatable demos. Live mode receives the point cloud forwarded by the ROS2 radar driver over local UDP and sends it through the same model pipeline.
 
@@ -12,7 +12,7 @@ Implemented now:
 - Streaming parser for the team's Zstandard-compressed `.dat` recording format.
 - Replay mode for real radar point-cloud data.
 - Live mode using the ROS2 point-cloud UDP bridge.
-- Preliminary CNN pose classification from `pose_classifier.pt`.
+- PointNet-style pose classification directly from variable-length XYZ samples.
 - Mock mode for frontend/backend smoke tests when replay data is unavailable.
 - React + Vite dashboard with:
   - current pose panel,
@@ -27,9 +27,31 @@ Important limitations:
 - Radar points in replay mode are real parsed `.dat` data.
 - Replay predictions use the preliminary trained model; mock mode remains synthetic.
 - Live mode requires the ROS2 radar driver and UDP bridge to be running.
-- The checkpoint still needs evaluation on outlier recordings such as `t_pose_1_1`.
+- The 120- and 240-epoch candidate checkpoints still need live comparison before
+  the team selects one for the final demonstration.
 - The SMPL viewer includes the four recognized pose references: Standing,
   T Pose, Squat, and Angle.
+
+### Point-cloud Model
+
+The current model is a simplified PointNet-style classifier rather than the
+older raster CNN. It consumes each centred, variable-length `N x 3` point set
+directly. Inside the model, a shared `1 x 1` MLP maps each point from 3 to 256
+features, masked max pooling produces one shape vector, and four auxiliary
+statistics (`raw_scale`, `std_x`, `std_y`, and `skew_z`) are concatenated before
+the classifier head. The backend then applies softmax and sends the same four
+label probabilities expected by the existing dashboard.
+
+The tracked candidates are:
+
+```text
+pointcloud_classifier120f.pt
+pointcloud_classifier240.pt
+```
+
+Both use `angle_pose`, `squat`, `standing_pose`, and `t_pose`. The backend
+prefers the 240-epoch candidate by default, but this is a runtime default rather
+than a claim that it performs better on live radar.
 
 ## Project Structure
 
@@ -44,7 +66,7 @@ RadarBodyMesh/
       parser.py                 # Streaming .dat parser
       preprocess.py             # Shared filtering, feature shaping, JSON point conversion
     model/
-      inference.py              # CNN checkpoint loader and mock predictor
+      inference.py              # PointNet/raster checkpoint loaders and mock predictor
     backend/
       app.py                    # FastAPI REST/WebSocket app
       live.py                   # Shared live UDP receiver service
@@ -84,7 +106,7 @@ That directory is also ignored by Git.
 
 ## SMPL Reference Pose
 
-The five recognized pose-reference GLBs are tracked in Git and work immediately
+The four recognized pose-reference GLBs are tracked in Git and work immediately
 after cloning or pulling the repository. They are static demonstrations, not
 body meshes reconstructed from radar data.
 
@@ -136,38 +158,52 @@ WS   /ws/predictions?source=live
 Source modes:
 
 - `mock`: generated point cloud and mock prediction.
-- `replay`: parsed `.dat` radar replay and CNN prediction.
-- `live`: UDP radar frames and CNN prediction.
+- `replay`: parsed `.dat` radar replay and model prediction.
+- `live`: UDP radar frames and model prediction.
 - `auto`: replay if available, otherwise mock.
 
 Environment variables:
 
 ```bash
-MMYOGA_REPLAY_FILE=/path/to/file.dat
-MMYOGA_PLAYBACK_SPEED=1.0
-MMYOGA_MODEL_FILE=/path/to/pose_classifier.pt
-MMYOGA_RADAR_HOST=239.255.0.1
-MMYOGA_RADAR_PORT=4200
-MMYOGA_RADAR_INTERFACE=127.0.0.1
-MMYOGA_RADAR_TIMEOUT=5.0
-MMYOGA_PREDICTION_INTERVAL_MS=0
+MMPOSE_REPLAY_FILE=/path/to/file.dat
+MMPOSE_PLAYBACK_SPEED=1.0
+MMPOSE_MODEL_FILE=/path/to/pointcloud_classifier240.pt
+MMPOSE_RADAR_HOST=239.255.0.1
+MMPOSE_RADAR_PORT=4200
+MMPOSE_RADAR_INTERFACE=127.0.0.1
+MMPOSE_RADAR_TIMEOUT=5.0
+MMPOSE_PREDICTION_INTERVAL_MS=0
 ```
 
-The backend uses `pose_classifier.pt` by default. Replay and Live require a
-valid configured checkpoint; Mock mode uses its deterministic mock predictor.
-`MMYOGA_PREDICTION_INTERVAL_MS` throttles how often the model runs: point clouds
-keep streaming at full frame rate while the pose result updates at most once per
-interval. The default is `0`, which follows the visualizer pipeline: predict
-each time 100 radar points have accumulated. Set it to a positive value (for
-example `500`) to cap prediction updates to one per interval instead.
+The backend uses `pointcloud_classifier240.pt` by default, then falls back to
+the 120-epoch candidate or the legacy `pose_classifier.pt` when the preferred
+file is absent. Replay and Live require a valid configured checkpoint; Mock mode
+uses its deterministic mock predictor. Existing `MMYOGA_*` variables remain
+accepted as compatibility aliases.
+
+To test the 120-epoch candidate instead:
+
+```bash
+MMPOSE_MODEL_FILE=pointcloud_classifier120f.pt \
+  .venv/bin/uvicorn mm_yoga.backend.app:app --host 0.0.0.0 --port 8000
+```
+
+`MMPOSE_PREDICTION_INTERVAL_MS` throttles how often a ready model batch runs.
+The default is `0`, matching the visualizer: predict whenever at least 100 real
+radar points have accumulated. A positive interval can delay a ready batch, but
+the backend never sends a sample with fewer than 100 points to the trained model.
 
 ### Radar Model Preprocessing
 
-Replay and Live inference mirror `point_visualizer/visualizer_with_classifier.py`: radar
-points use the same subject ROI, each frame is centered at the origin, and the
-classifier runs after at least 100 real points have accumulated. No zero-padding
-is added to CNN input. Display points are processed separately, so positioning
-the browser point cloud does not change the data received by the model.
+Replay and Live inference mirror the new
+`point_cloud_visualizer_with_classifier.py` logic from the `Point_Cloud_AI`
+branch: radar points use the same `[-10, 10]` bounds, each frame is centred at
+the origin, and the classifier runs after at least 100 real points have
+accumulated. The complete final radar frame is retained, so one sample may
+contain slightly more than 100 points. No rasterization, external scale
+normalization, or zero-padding is applied during single-sample inference.
+Display points are processed separately, so positioning the browser point cloud
+does not change the data received by the model.
 
 ### Live Radar
 
@@ -226,10 +262,12 @@ ws://localhost:8000/ws/predictions
 Override backend URLs if needed:
 
 ```bash
-VITE_MMYOGA_API_URL=http://localhost:8000 \
-VITE_MMYOGA_WS_URL=ws://localhost:8000/ws/predictions \
+VITE_MMPOSE_API_URL=http://localhost:8000 \
+VITE_MMPOSE_WS_URL=ws://localhost:8000/ws/predictions \
 npm run dev
 ```
+
+The former `VITE_MMYOGA_*` names remain supported as compatibility aliases.
 
 Mock can fall back to local generated data when the backend is unavailable.
 Replay and Live instead show a disconnected or unavailable state, so synthetic
@@ -284,7 +322,7 @@ The dashboard currently supports three radar display modes:
 
 For Replay and Live messages, `metrics.fps` is the radar frame rate calculated
 from a rolling window of source timestamps. `metrics.latency_ms` is the most recent
-CNN inference time measured in the backend; it is not network round-trip
+model inference time measured in the backend; it is not network round-trip
 latency. The point count shown in the status strip is the number of points in
 the currently selected display mode.
 

@@ -1,4 +1,4 @@
-"""Reviewed SMPL joint presets for the mmYoga reference-pose viewer."""
+"""Reviewed SMPL joint presets for the mmPose reference-pose viewer."""
 
 from __future__ import annotations
 

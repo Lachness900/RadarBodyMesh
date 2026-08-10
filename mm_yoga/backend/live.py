@@ -13,6 +13,7 @@ from mm_yoga.backend.stream import RadarStreamProcessor
 from mm_yoga.model.inference import (
     CNNPoseClassifier,
     MockPosePredictor,
+    PointCloudPoseClassifier,
     SklearnPoseClassifier,
 )
 from point_visualizer.decoder import UDPStreamReader
@@ -74,7 +75,12 @@ class LiveRadarService:
         self,
         *,
         loop: asyncio.AbstractEventLoop,
-        predictor: MockPosePredictor | CNNPoseClassifier | SklearnPoseClassifier,
+        predictor: (
+            MockPosePredictor
+            | PointCloudPoseClassifier
+            | CNNPoseClassifier
+            | SklearnPoseClassifier
+        ),
     ) -> None:
         """Start the UDP receiver thread if it is not already running."""
 
@@ -92,7 +98,7 @@ class LiveRadarService:
             self._stop_event.clear()
             self._thread = threading.Thread(
                 target=self._run_udp,
-                name="mm-yoga-live-radar",
+                name="mm-pose-live-radar",
                 daemon=True,
             )
             thread = self._thread

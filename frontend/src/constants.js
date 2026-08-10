@@ -1,6 +1,11 @@
 export const WS_URL =
-  import.meta.env.VITE_MMYOGA_WS_URL || "ws://localhost:8000/ws/predictions";
-export const API_URL = import.meta.env.VITE_MMYOGA_API_URL || "http://localhost:8000";
+  import.meta.env.VITE_MMPOSE_WS_URL ||
+  import.meta.env.VITE_MMYOGA_WS_URL ||
+  "ws://localhost:8000/ws/predictions";
+export const API_URL =
+  import.meta.env.VITE_MMPOSE_API_URL ||
+  import.meta.env.VITE_MMYOGA_API_URL ||
+  "http://localhost:8000";
 const REFERENCE_POSE_ROOT = `${import.meta.env.BASE_URL}reference-poses`;
 const REFERENCE_POSE_VERSION = "20260808-squat-v14";
 

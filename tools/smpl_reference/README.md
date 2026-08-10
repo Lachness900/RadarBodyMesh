@@ -1,6 +1,6 @@
 # SMPL Reference Pose Export
 
-This tool generates the static reference poses shown in the mmYoga dashboard.
+This tool generates the static reference poses shown in the mmPose dashboard.
 It does not reconstruct a person from radar data.
 
 The T Pose uses the original SMPL template directly. The other poses start from

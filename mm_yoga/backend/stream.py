@@ -28,7 +28,10 @@ from mm_yoga.model.inference import (
 CLASSIFIER_RADAR_BOUNDS: Bounds3D = ((-10.0, 10.0), (-10.0, 10.0), (-10, 10))
 CLASSIFIER_BATCH_POINTS = 100
 DEFAULT_PREDICTION_INTERVAL_MS = float(
-    os.getenv("MMYOGA_PREDICTION_INTERVAL_MS", "0")
+    os.getenv(
+        "MMPOSE_PREDICTION_INTERVAL_MS",
+        os.getenv("MMYOGA_PREDICTION_INTERVAL_MS", "0"),
+    )
 )
 
 

@@ -56,8 +56,8 @@ def points_to_features(
 
     Feature columns are ``x, y, z, intensity, velocity, range``. Raw replay
     files only contain xyz, so missing intensity and velocity are filled with 0.
-    This fixed shape is used by the deterministic mock predictor. The trained
-    CNN consumes variable-length xyz batches directly before Y-Z rasterization.
+    This fixed shape is used only by the deterministic mock predictor. Trained
+    models receive the real variable-length xyz sample directly.
     """
 
     points = np.asarray(points, dtype=np.float64)

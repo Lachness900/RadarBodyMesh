@@ -1,4 +1,4 @@
-"""FastAPI backend for mmYoga radar inference and frontend WebSocket updates."""
+"""FastAPI backend for mmPose radar inference and frontend WebSocket updates."""
 
 from __future__ import annotations
 
@@ -40,10 +40,26 @@ DEFAULT_REPLAY_DIRS = [
     UPLOAD_REPLAY_DIR,
 ]
 logger = logging.getLogger("uvicorn.error")
-LIVE_RADAR_HOST = os.getenv("MMYOGA_RADAR_HOST", "239.255.0.1")
-LIVE_RADAR_PORT = int(os.getenv("MMYOGA_RADAR_PORT", "4200"))
-LIVE_RADAR_INTERFACE = os.getenv("MMYOGA_RADAR_INTERFACE", "127.0.0.1")
-LIVE_RADAR_TIMEOUT_S = float(os.getenv("MMYOGA_RADAR_TIMEOUT", "5.0"))
+
+
+def _environment_value(primary: str, legacy: str, default: str | None = None) -> str | None:
+    """Read the mmPose variable while keeping legacy launch scripts working."""
+
+    return os.getenv(primary, os.getenv(legacy, default))
+
+
+LIVE_RADAR_HOST = _environment_value(
+    "MMPOSE_RADAR_HOST", "MMYOGA_RADAR_HOST", "239.255.0.1"
+)
+LIVE_RADAR_PORT = int(
+    _environment_value("MMPOSE_RADAR_PORT", "MMYOGA_RADAR_PORT", "4200")
+)
+LIVE_RADAR_INTERFACE = _environment_value(
+    "MMPOSE_RADAR_INTERFACE", "MMYOGA_RADAR_INTERFACE", "127.0.0.1"
+)
+LIVE_RADAR_TIMEOUT_S = float(
+    _environment_value("MMPOSE_RADAR_TIMEOUT", "MMYOGA_RADAR_TIMEOUT", "5.0")
+)
 live_radar = LiveRadarService(
     host=LIVE_RADAR_HOST,
     port=LIVE_RADAR_PORT,
@@ -63,7 +79,7 @@ async def lifespan(_app: FastAPI):
 
 
 # Replay remains the deterministic default; Live is selected explicitly.
-app = FastAPI(title="mmYoga backend", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="mmPose backend", version="0.3.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -76,7 +92,7 @@ app.add_middleware(
 def _model_path() -> Path | None:
     """Return the configured model, preferring the final point-cloud checkpoint."""
 
-    raw_path = os.getenv("MMYOGA_MODEL_FILE")
+    raw_path = _environment_value("MMPOSE_MODEL_FILE", "MMYOGA_MODEL_FILE")
     if raw_path is not None:
         return Path(raw_path) if raw_path else None
     return next(
@@ -88,7 +104,13 @@ def _model_path() -> Path | None:
 def _replay_path() -> Path:
     """Recording used by REST/WebSocket replay endpoints."""
 
-    return Path(os.getenv("MMYOGA_REPLAY_FILE", str(DEFAULT_REPLAY_FILE)))
+    return Path(
+        _environment_value(
+            "MMPOSE_REPLAY_FILE",
+            "MMYOGA_REPLAY_FILE",
+            str(DEFAULT_REPLAY_FILE),
+        )
+    )
 
 
 def _available_replay_files() -> list[Path]:
@@ -246,7 +268,13 @@ async def predictions(websocket: WebSocket) -> None:
                 async for message in async_replay_messages(
                     replay_path,
                     predictor=predictor,
-                    playback_speed=float(os.getenv("MMYOGA_PLAYBACK_SPEED", "1.0")),
+                    playback_speed=float(
+                        _environment_value(
+                            "MMPOSE_PLAYBACK_SPEED",
+                            "MMYOGA_PLAYBACK_SPEED",
+                            "1.0",
+                        )
+                    ),
                 ):
                     await websocket.send_json(message)
         elif mode == "replay":

@@ -1,4 +1,4 @@
-"""Export the approved mmYoga poses as local SMPL reference assets.
+"""Export the approved mmPose poses as local SMPL reference assets.
 
 The T-pose uses the canonical template directly. The remaining presets are
 generated with the official ``smplx`` linear blend skinning implementation.
@@ -240,7 +240,7 @@ def write_glb(
     gltf = {
         "asset": {
             "version": "2.0",
-            "generator": "mmYoga SMPL reference pose exporter",
+            "generator": "mmPose SMPL reference pose exporter",
         },
         "scene": 0,
         "scenes": [{"name": "SMPL Reference Pose", "nodes": [0]}],
@@ -464,7 +464,7 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line options for one local reference export."""
 
     parser = argparse.ArgumentParser(
-        description="Export reviewed mmYoga SMPL reference poses as GLB files."
+        description="Export reviewed mmPose SMPL reference poses as GLB files."
     )
     parser.add_argument(
         "--model",

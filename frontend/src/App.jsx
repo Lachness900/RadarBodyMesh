@@ -79,7 +79,7 @@ export default function App() {
       <header className="topbar">
         <div>
           <div className="eyebrow">mmWave Pose Matching</div>
-          <h1>mmYoga</h1>
+          <h1>mmPose</h1>
         </div>
         <div className="timestamp">
           <span>{timestampLabel}</span>

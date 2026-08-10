@@ -1,4 +1,4 @@
-"""Prediction interface used by the mmYoga backend."""
+"""Prediction interface used by the mmPose backend."""
 
 from .inference import (
     DEFAULT_POSE_LABELS,

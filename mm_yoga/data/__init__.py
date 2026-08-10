@@ -1,4 +1,4 @@
-"""Data loading and preprocessing helpers for mmYoga."""
+"""Data loading and preprocessing helpers for mmPose."""
 
 from .parser import (
     DEPTH_CAMERA_MESSAGE,
