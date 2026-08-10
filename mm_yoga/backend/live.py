@@ -61,6 +61,7 @@ class LiveRadarService:
             last_frame = self._last_frame_monotonic
             running = self._running
             error = self._error
+            model_id = self._model_id
         frame_age_s = None if last_frame is None else max(0.0, time.monotonic() - last_frame)
         return {
             "supported": True,
@@ -70,7 +71,55 @@ class LiveRadarService:
             "interface": self.interface,
             "last_frame_age_s": frame_age_s,
             "error": error,
+            "model_id": model_id,
         }
+
+    @property
+    def model_id(self) -> str | None:
+        """Return the checkpoint currently assigned to the shared Live stream."""
+
+        with self._lock:
+            return self._model_id
+
+    def configure_model(
+        self,
+        *,
+        model_id: str,
+        predictor: (
+            MockPosePredictor
+            | PointCloudPoseClassifier
+            | CNNPoseClassifier
+            | SklearnPoseClassifier
+        ),
+    ) -> bool:
+        """Set the one global Live model and reset its accumulated point state."""
+
+        with self._lock:
+            return self._configure_model_locked(model_id=model_id, predictor=predictor)
+
+    def _configure_model_locked(
+        self,
+        *,
+        model_id: str,
+        predictor,
+        force_reset: bool = False,
+    ) -> bool:
+        """Update the Live processor while ``self._lock`` is already held."""
+
+        if (
+            not force_reset
+            and self._model_id == model_id
+            and self._processor is not None
+        ):
+            return False
+        self._processor = RadarStreamProcessor(
+            predictor=predictor,
+            source="live",
+            model_id=model_id,
+        )
+        self._model_id = model_id
+        self._latest_message = None
+        return True
 
     def start(
         self,
@@ -84,29 +133,21 @@ class LiveRadarService:
             | SklearnPoseClassifier
         ),
     ) -> None:
-        """Start the UDP receiver or reset inference when its model changes."""
+        """Start the UDP receiver without replacing an existing global model."""
 
         with self._lock:
+            if self._processor is None or self._model_id is None:
+                self._configure_model_locked(model_id=model_id, predictor=predictor)
             if self._thread is not None and self._thread.is_alive():
-                if self._model_id != model_id:
-                    # Keep the UDP socket alive, but discard points and predictions
-                    # accumulated by the previous model before serving new results.
-                    self._processor = RadarStreamProcessor(
-                        predictor=predictor,
-                        source="live",
-                        model_id=model_id,
-                    )
-                    self._model_id = model_id
-                    self._latest_message = None
                 return
             self._loop = loop
-            self._processor = RadarStreamProcessor(
-                predictor=predictor,
-                source="live",
-                model_id=model_id,
+            # A restarted receiver must not reuse points accumulated before a
+            # timeout or socket failure, even when the selected model is equal.
+            self._configure_model_locked(
+                model_id=self._model_id,
+                predictor=self._processor.predictor,
+                force_reset=True,
             )
-            self._model_id = model_id
-            self._latest_message = None
             self._last_frame_monotonic = None
             self._error = None
             self._timestamp_origin_us = None
@@ -218,9 +259,10 @@ class LiveRadarService:
         timestamp_ms = self._elapsed_timestamp_ms(timestamp_us)
         message = processor.process_frame(timestamp_ms=timestamp_ms, points=points)
         with self._lock:
+            processor_is_current = processor is self._processor
             self._last_frame_monotonic = time.monotonic()
             self._error = None
-        if message is not None:
+        if message is not None and processor_is_current:
             self._schedule(self._publish_message, message)
 
     def _elapsed_timestamp_ms(self, timestamp_us: int) -> float:

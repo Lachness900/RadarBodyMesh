@@ -298,6 +298,26 @@ async def upload_replay_file(request: Request, filename: str | None = None) -> d
     }
 
 
+@app.post("/api/live-model")
+def select_live_model(model: str) -> dict[str, object]:
+    """Change the one model shared by every Live Radar dashboard client."""
+
+    try:
+        model_option = _selected_model(model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    predictor = _cached_predictor(str(model_option.path))
+    changed = live_radar.configure_model(
+        model_id=model_option.id,
+        predictor=predictor,
+    )
+    return {
+        "model_id": model_option.id,
+        "changed": changed,
+        "live": live_radar.status(),
+    }
+
+
 @app.get("/api/latest")
 def latest(
     source: str = "auto",
@@ -309,7 +329,7 @@ def latest(
         return _mock_latest()
     if mode == "live":
         try:
-            model_option = _selected_model(model)
+            model_option = _selected_model(live_radar.model_id or model)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         message = live_radar.latest_message
@@ -348,7 +368,11 @@ async def predictions(websocket: WebSocket) -> None:
             async for message in async_mock_messages():
                 await websocket.send_json(message)
         elif mode == "live":
-            model_option = _selected_model(websocket.query_params.get("model"))
+            # Joining Live observes the current global model. The query value is
+            # used only to initialise a stream that has not selected one yet.
+            model_option = _selected_model(
+                live_radar.model_id or websocket.query_params.get("model")
+            )
             predictor = _cached_predictor(str(model_option.path))
             live_radar.start(
                 loop=asyncio.get_running_loop(),
