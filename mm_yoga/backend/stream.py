@@ -20,6 +20,7 @@ from mm_yoga.data.preprocess import (
 from mm_yoga.model.inference import (
     CNNPoseClassifier,
     MockPosePredictor,
+    PointCloudPoseClassifier,
     PredictionResult,
     SklearnPoseClassifier,
 )
@@ -64,16 +65,21 @@ def build_message(
 
 
 def predict_points(
-    predictor: MockPosePredictor | CNNPoseClassifier | SklearnPoseClassifier,
+    predictor: (
+        MockPosePredictor
+        | PointCloudPoseClassifier
+        | CNNPoseClassifier
+        | SklearnPoseClassifier
+    ),
     points: np.ndarray,
 ) -> tuple[PredictionResult, float]:
     """Run one prediction and return its measured inference latency."""
 
     started = time.perf_counter()
     model_input = (
-        points
-        if isinstance(predictor, (CNNPoseClassifier, SklearnPoseClassifier))
-        else points_to_features(points, max_points=CLASSIFIER_BATCH_POINTS)
+        points_to_features(points, max_points=CLASSIFIER_BATCH_POINTS)
+        if isinstance(predictor, MockPosePredictor)
+        else points
     )
     prediction = predictor.predict(model_input)
     elapsed_ms = (time.perf_counter() - started) * 1000.0
@@ -119,28 +125,6 @@ def append_recent_points(
     return np.concatenate([current, points], axis=0)[-limit:]
 
 
-def _smooth_prediction(
-    previous: PredictionResult | None,
-    current: PredictionResult,
-) -> PredictionResult:
-    """Blend prediction probabilities using the dashboard's existing 80/20 rule."""
-
-    if previous is None:
-        probabilities = dict(current.probabilities)
-    else:
-        probabilities = {
-            label: current.probabilities.get(label, 0.0) * 0.2
-            + previous.probabilities.get(label, 0.0) * 0.8
-            for label in current.probabilities
-        }
-    label = max(probabilities, key=probabilities.get)
-    return PredictionResult(
-        label=label,
-        confidence=probabilities[label],
-        probabilities=probabilities,
-    )
-
-
 class RadarStreamProcessor:
     """Turn successive raw radar frames into model-backed dashboard messages.
 
@@ -151,7 +135,12 @@ class RadarStreamProcessor:
     def __init__(
         self,
         *,
-        predictor: MockPosePredictor | CNNPoseClassifier | SklearnPoseClassifier,
+        predictor: (
+            MockPosePredictor
+            | PointCloudPoseClassifier
+            | CNNPoseClassifier
+            | SklearnPoseClassifier
+        ),
         source: str,
         prediction_interval_ms: float = DEFAULT_PREDICTION_INTERVAL_MS,
     ) -> None:
@@ -167,13 +156,10 @@ class RadarStreamProcessor:
         self.classifier_pending_count = 0
         self.classifier_overflow = np.empty((0, 3), dtype=np.float64)
         self.current_prediction: PredictionResult | None = None
-        self.last_prediction: PredictionResult | None = None
         self.last_inference_latency_ms = 0.0
         self._last_prediction_timestamp_ms: float | None = None
         self.previous_timestamp_ms: float | None = None
         self.frame_intervals_ms: deque[float] = deque(maxlen=10)
-        with open("log.txt", "w"):
-            pass
 
     def process_frame(
         self,
@@ -210,18 +196,10 @@ class RadarStreamProcessor:
             or timestamp_ms - self._last_prediction_timestamp_ms
             >= self.prediction_interval_ms
         )
-        # With a configured interval, predict at each interval tick whenever
-        # points exist, so sparse live frames still update regularly instead of
-        # waiting many seconds to accumulate 100 points. Interval 0 keeps the
-        # original 100-point batch behaviour.
-        should_predict = (
-            pending_total > 0
-            and (
-                batch_ready
-                if self.prediction_interval_ms <= 0
-                else interval_ready
-            )
-        )
+        # Match the point-cloud visualizer and training extractor: every model
+        # sample contains at least 100 real points. A positive interval may
+        # throttle ready batches, but it must never create a shorter sample.
+        should_predict = batch_ready and interval_ready
         if should_predict:
             current_points = (
                 np.concatenate(
@@ -243,19 +221,13 @@ class RadarStreamProcessor:
         fps = self._update_fps(timestamp_ms)
         if self.current_prediction is None:
             return None
-        self.last_prediction = _smooth_prediction(
-            self.last_prediction,
-            self.current_prediction,
-        )
-        with open("log.txt", "a") as file:
-            file.write(f"\n{self.last_prediction.label}")
 
         projected = projected_radar_points(self.display_history[-100:])
         return build_message(
             timestamp_ms=timestamp_ms,
             source=self.source,
             points=self.display_history,
-            prediction=self.last_prediction,
+            prediction=self.current_prediction,
             display_points=projected if len(projected) else self.raw_history,
             point_sets={
                 "projected_radar": projected,
