@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import pickle
 from pathlib import Path
 from typing import Optional, Sequence, Union
 
@@ -13,9 +14,6 @@ from numpy.typing import NDArray
 import torch
 import torch.nn as nn
 
-from sklearn.neural_network import MLPClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.pipeline import Pipeline
 import joblib
 
 DEFAULT_POSE_LABELS = [
@@ -33,6 +31,7 @@ class PredictionResult:
     label: str
     confidence: float
     probabilities: dict[str, float]
+
 
 class PoseCNN(nn.Module):
     """Current checkpoint architecture: two input planes and 128-dim embedding."""
@@ -114,11 +113,79 @@ class LegacyPoseCNN(nn.Module):
         x = self.features(x)
         return self.classifier(x)
 
-## Should be joblib path
+
+def normalize_and_features(
+    points: torch.Tensor,
+    mask: torch.Tensor,
+    eps: float = 1e-6,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Match the normalization and auxiliary features used during training."""
+
+    mask_f = mask.float()
+    n_real = mask_f.sum(dim=1, keepdim=True).clamp(min=1.0)
+
+    point_norms = points.norm(dim=2).masked_fill(~mask, 0.0)
+    raw_scale = point_norms.max(dim=1).values.clamp(min=eps)
+
+    normalized_points = points / raw_scale.view(-1, 1, 1)
+    normalized_points = normalized_points * mask_f.unsqueeze(-1)
+
+    mean = (normalized_points * mask_f.unsqueeze(-1)).sum(dim=1) / n_real
+    centered = (normalized_points - mean.unsqueeze(1)) * mask_f.unsqueeze(-1)
+    variance = (centered**2).sum(dim=1) / n_real
+    std = torch.sqrt(variance + eps)
+    third_moment = (centered**3).sum(dim=1) / n_real
+    skew = third_moment / (std**3 + eps)
+
+    aux = torch.stack([raw_scale, std[:, 0], std[:, 1], skew[:, 2]], dim=1)
+    return normalized_points, aux
+
+
+class PointCloudNet(nn.Module):
+    """Simplified PointNet-style classifier used by the final checkpoints."""
+
+    AUX_FEATURES = 4
+
+    def __init__(self, num_classes: int):
+        super().__init__()
+        self.shared_mlp = nn.Sequential(
+            nn.Conv1d(3, 64, kernel_size=1),
+            nn.BatchNorm1d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(64, 128, kernel_size=1),
+            nn.BatchNorm1d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(128, 256, kernel_size=1),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+        )
+        self.aux_norm = nn.BatchNorm1d(self.AUX_FEATURES)
+        self.classifier = nn.Sequential(
+            nn.Linear(256 + self.AUX_FEATURES, 128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(128, num_classes),
+        )
+
+    def forward(self, points: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        normalized_points, aux = normalize_and_features(points, mask)
+        features = self.shared_mlp(normalized_points.transpose(1, 2))
+
+        mask_expanded = mask.unsqueeze(1).expand(-1, features.size(1), -1)
+        features = features.masked_fill(~mask_expanded, float("-inf"))
+        pooled = torch.nan_to_num(features.max(dim=2).values, neginf=0.0)
+
+        fused = torch.cat([pooled, self.aux_norm(aux)], dim=1)
+        return self.classifier(fused)
+
+
 class SklearnPoseClassifier:
+    """Load a legacy scikit-learn point classifier."""
+
     def __init__(self, path: Path):
         self.model = joblib.load(path)
         self.labels = list(self.model.classes_)
+
     def predict(self, points: np.ndarray[np.floating]) -> PredictionResult:
         points = points[:, 0:3].flatten()[:300].reshape(1, -1)
         probabilities = self.model.predict_proba(points)[0]
@@ -206,6 +273,31 @@ class CNNPoseClassifier:
         return _result_from_probabilities(self.labels, probs)
 
 
+class PointCloudPoseClassifier:
+    """Load a PointNet-style checkpoint and predict from raw centred XYZ points."""
+
+    def __init__(self, path: Path, *, checkpoint: Optional[dict] = None):
+        ckpt = checkpoint or torch.load(path, map_location="cpu", weights_only=True)
+        self.labels = list(ckpt["label_names"])
+        self.model = PointCloudNet(num_classes=len(self.labels))
+        self.model.load_state_dict(ckpt["model_state_dict"])
+        self.model.eval()
+
+    def predict(self, points: NDArray[np.floating]) -> PredictionResult:
+        """Run one variable-length sample without rasterizing or zero-padding it."""
+
+        xyz = np.asarray(points, dtype=np.float32)
+        if xyz.ndim != 2 or xyz.shape[1] < 3 or len(xyz) == 0:
+            raise ValueError("point-cloud inference requires a non-empty N x 3 array")
+
+        points_t = torch.from_numpy(np.ascontiguousarray(xyz[:, :3])).unsqueeze(0)
+        mask_t = torch.ones((1, len(xyz)), dtype=torch.bool)
+        with torch.inference_mode():
+            logits = self.model(points_t, mask_t)
+            probabilities = torch.softmax(logits, dim=1)[0].cpu().numpy()
+        return _result_from_probabilities(self.labels, probabilities)
+
+
 class MockPosePredictor:
     """Deterministic fallback predictor for UI/backend smoke tests.
 
@@ -255,19 +347,29 @@ def _result_from_probabilities(
 
 def load_predictor(
     path: Optional[Union[str, Path]] = None,
-    *,
-    labels: Sequence[str] = DEFAULT_POSE_LABELS,
-) -> CNNPoseClassifier | SklearnPoseClassifier:
-    """Load a trained checkpoint, falling back to mock output if unavailable."""
+) -> PointCloudPoseClassifier | CNNPoseClassifier | SklearnPoseClassifier:
+    """Load a trained predictor and detect the PyTorch architecture from its state."""
 
+    if path is None:
+        raise FileNotFoundError("No model checkpoint is configured")
     model_path = Path(path)
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
 
-    assert(model_path.exists())
+    file_type = model_path.suffix.lower()
+    if file_type == ".pt":
+        try:
+            checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
+        except pickle.UnpicklingError:
+            # The repository's older raster checkpoint stores NumPy objects that
+            # PyTorch's restricted loader rejects. It remains a trusted, tracked
+            # compatibility artifact; new point-cloud checkpoints load safely.
+            return CNNPoseClassifier(model_path)
 
-    file_type = model_path.name.split('.')[-1]
-    if file_type == 'pt':
+        state = checkpoint.get("model_state_dict", {})
+        if "shared_mlp.0.weight" in state:
+            return PointCloudPoseClassifier(model_path, checkpoint=checkpoint)
         return CNNPoseClassifier(model_path)
-    elif file_type == 'joblib':
+    if file_type == ".joblib":
         return SklearnPoseClassifier(model_path)
-    else:
-        raise Exception("No model found")
+    raise ValueError(f"Unsupported model checkpoint type: {model_path.suffix}")

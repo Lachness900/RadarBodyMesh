@@ -29,6 +29,11 @@ from mm_yoga.model.inference import load_predictor
 DEFAULT_REPLAY_FILE = Path(
     "OneDrive/DepthCam_Radar_Cloud_Combined/cam_radar_1783260788477740516.dat"
 )
+DEFAULT_MODEL_FILES = [
+    Path("pointcloud_classifier240.pt"),
+    Path("pointcloud_classifier120f.pt"),
+    Path("pose_classifier.pt"),
+]
 UPLOAD_REPLAY_DIR = Path("data/replay/uploads")
 DEFAULT_REPLAY_DIRS = [
     Path("OneDrive/DepthCam_Radar_Cloud_Combined"),
@@ -69,10 +74,15 @@ app.add_middleware(
 
 
 def _model_path() -> Path | None:
-    """Configured model checkpoint, defaulting to the repository checkpoint."""
+    """Return the configured model, preferring the final point-cloud checkpoint."""
 
-    raw_path = os.getenv("MMYOGA_MODEL_FILE", "pose_classifier.pt")
-    return Path(raw_path) if raw_path else None
+    raw_path = os.getenv("MMYOGA_MODEL_FILE")
+    if raw_path is not None:
+        return Path(raw_path) if raw_path else None
+    return next(
+        (path for path in DEFAULT_MODEL_FILES if path.exists()),
+        DEFAULT_MODEL_FILES[0],
+    )
 
 
 def _replay_path() -> Path:

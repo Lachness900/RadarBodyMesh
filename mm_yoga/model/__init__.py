@@ -3,17 +3,23 @@
 from .inference import (
     DEFAULT_POSE_LABELS,
     CNNPoseClassifier,
-    SklearnPoseClassifier,
     MockPosePredictor,
+    PointCloudNet,
+    PointCloudPoseClassifier,
     PredictionResult,
+    SklearnPoseClassifier,
     load_predictor,
+    normalize_and_features,
 )
 
 __all__ = [
     "DEFAULT_POSE_LABELS",
     "CNNPoseClassifier",
-    "SklearnPoseClassifier",
     "MockPosePredictor",
+    "PointCloudNet",
+    "PointCloudPoseClassifier",
     "PredictionResult",
+    "SklearnPoseClassifier",
     "load_predictor",
+    "normalize_and_features",
 ]
