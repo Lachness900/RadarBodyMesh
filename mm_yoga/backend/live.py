@@ -44,6 +44,7 @@ class LiveRadarService:
         self._reader: UDPStreamReader | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._processor: RadarStreamProcessor | None = None
+        self._model_id: str | None = None
         self._subscribers: set[asyncio.Queue[object]] = set()
         self._latest_message: dict[str, object] | None = None
         self._last_frame_monotonic: float | None = None
@@ -75,6 +76,7 @@ class LiveRadarService:
         self,
         *,
         loop: asyncio.AbstractEventLoop,
+        model_id: str,
         predictor: (
             MockPosePredictor
             | PointCloudPoseClassifier
@@ -82,13 +84,28 @@ class LiveRadarService:
             | SklearnPoseClassifier
         ),
     ) -> None:
-        """Start the UDP receiver thread if it is not already running."""
+        """Start the UDP receiver or reset inference when its model changes."""
 
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
+                if self._model_id != model_id:
+                    # Keep the UDP socket alive, but discard points and predictions
+                    # accumulated by the previous model before serving new results.
+                    self._processor = RadarStreamProcessor(
+                        predictor=predictor,
+                        source="live",
+                        model_id=model_id,
+                    )
+                    self._model_id = model_id
+                    self._latest_message = None
                 return
             self._loop = loop
-            self._processor = RadarStreamProcessor(predictor=predictor, source="live")
+            self._processor = RadarStreamProcessor(
+                predictor=predictor,
+                source="live",
+                model_id=model_id,
+            )
+            self._model_id = model_id
             self._latest_message = None
             self._last_frame_monotonic = None
             self._error = None

@@ -31,7 +31,11 @@ def make_frame(point_count, offset):
 class RadarStreamTests(unittest.TestCase):
     def test_stream_matches_visualizer_flush_and_uses_raw_predictions(self):
         predictor = CapturingPredictor()
-        processor = RadarStreamProcessor(predictor=predictor, source="replay")
+        processor = RadarStreamProcessor(
+            predictor=predictor,
+            source="replay",
+            model_id="test_model",
+        )
 
         self.assertIsNone(
             processor.process_frame(timestamp_ms=0.0, points=make_frame(60, 1.0))
@@ -46,6 +50,7 @@ class RadarStreamTests(unittest.TestCase):
         np.testing.assert_allclose(predictor.inputs[0][:60].mean(axis=0), 0.0, atol=1e-12)
         np.testing.assert_allclose(predictor.inputs[0][60:].mean(axis=0), 0.0, atol=1e-12)
         self.assertEqual(first_message["prediction"]["label"], "standing_pose")
+        self.assertEqual(first_message["model_id"], "test_model")
 
         second_message = processor.process_frame(
             timestamp_ms=200.0,

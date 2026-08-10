@@ -31,6 +31,7 @@ def mock_message(timestamp_ms: float = 0.0, *, interval_s: float = 0.1) -> dict[
     return build_message(
         timestamp_ms=timestamp_ms,
         source="mock",
+        model_id="mock",
         points=points,
         prediction=prediction,
         point_sets={
@@ -47,6 +48,7 @@ def iter_replay_messages(
     replay_file: Union[str, Path],
     *,
     predictor,
+    model_id: str,
     max_frames: Optional[int] = None,
 ) -> Iterator[dict[str, object]]:
     """Yield dashboard messages from a recorded radar replay.
@@ -56,7 +58,11 @@ def iter_replay_messages(
     """
 
     emitted = 0
-    processor = RadarStreamProcessor(predictor=predictor, source="replay")
+    processor = RadarStreamProcessor(
+        predictor=predictor,
+        source="replay",
+        model_id=model_id,
+    )
     reader = DatFrameReader(replay_file)
     for frame in reader.iter_frames(message_types={RADAR_MESSAGE}):
         message = processor.process_frame(
@@ -75,13 +81,18 @@ async def async_replay_messages(
     replay_file: Union[str, Path],
     *,
     predictor,
+    model_id: str,
     playback_speed: float = 1.0,
 ) -> AsyncIterator[dict[str, object]]:
     """Async replay stream that approximates the original recording cadence."""
 
     previous_timestamp_ms: Optional[float] = None
     speed = max(playback_speed, 0.1)
-    for message in iter_replay_messages(replay_file, predictor=predictor):
+    for message in iter_replay_messages(
+        replay_file,
+        predictor=predictor,
+        model_id=model_id,
+    ):
         timestamp_ms = float(message["timestamp_ms"])
         if previous_timestamp_ms is not None:
             # Preserve the recording cadence, but cap each sleep so a long gap in

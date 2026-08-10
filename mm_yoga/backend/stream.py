@@ -39,6 +39,7 @@ def build_message(
     *,
     timestamp_ms: float,
     source: str,
+    model_id: str,
     points: np.ndarray,
     prediction: PredictionResult,
     fps: float,
@@ -56,6 +57,7 @@ def build_message(
     return PredictionMessage(
         timestamp_ms=timestamp_ms,
         source=source,
+        model_id=model_id,
         prediction=PredictionPayload(
             label=prediction.label,
             confidence=prediction.confidence,
@@ -145,10 +147,12 @@ class RadarStreamProcessor:
             | SklearnPoseClassifier
         ),
         source: str,
+        model_id: str,
         prediction_interval_ms: float = DEFAULT_PREDICTION_INTERVAL_MS,
     ) -> None:
         self.predictor = predictor
         self.source = source
+        self.model_id = model_id
         self.prediction_interval_ms = max(0.0, prediction_interval_ms)
         self.raw_history = np.empty((0, 3), dtype=np.float64)
         self.display_history = np.empty((0, 3), dtype=np.float64)
@@ -229,6 +233,7 @@ class RadarStreamProcessor:
         return build_message(
             timestamp_ms=timestamp_ms,
             source=self.source,
+            model_id=self.model_id,
             points=self.display_history,
             prediction=self.current_prediction,
             display_points=projected if len(projected) else self.raw_history,

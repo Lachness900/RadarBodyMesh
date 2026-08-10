@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from functools import lru_cache
 import logging
 import os
 from pathlib import Path
@@ -29,11 +31,22 @@ from mm_yoga.model.inference import load_predictor
 DEFAULT_REPLAY_FILE = Path(
     "OneDrive/DepthCam_Radar_Cloud_Combined/cam_radar_1783260788477740516.dat"
 )
-DEFAULT_MODEL_FILES = [
-    Path("pointcloud_classifier240.pt"),
-    Path("pointcloud_classifier120f.pt"),
-    Path("pose_classifier.pt"),
-]
+
+
+@dataclass(frozen=True)
+class ModelOption:
+    """One server-approved checkpoint exposed to the dashboard."""
+
+    id: str
+    label: str
+    path: Path
+
+
+BUILT_IN_MODELS = (
+    ModelOption("pointcloud_240", "PointNet 240", Path("pointcloud_classifier240.pt")),
+    ModelOption("pointcloud_120", "PointNet 120", Path("pointcloud_classifier120f.pt")),
+)
+LEGACY_MODEL = ModelOption("legacy_raster", "Legacy raster", Path("pose_classifier.pt"))
 UPLOAD_REPLAY_DIR = Path("data/replay/uploads")
 DEFAULT_REPLAY_DIRS = [
     Path("OneDrive/DepthCam_Radar_Cloud_Combined"),
@@ -89,16 +102,68 @@ app.add_middleware(
 )
 
 
-def _model_path() -> Path | None:
-    """Return the configured model, preferring the final point-cloud checkpoint."""
+def _same_path(left: Path, right: Path) -> bool:
+    """Compare configured and built-in paths without requiring either to exist."""
 
+    return left.expanduser().resolve(strict=False) == right.resolve(strict=False)
+
+
+def _available_model_options() -> list[ModelOption]:
+    """Return the fixed set of checkpoints the frontend may request."""
+
+    options = [option for option in BUILT_IN_MODELS if option.path.exists()]
     raw_path = _environment_value("MMPOSE_MODEL_FILE", "MMYOGA_MODEL_FILE")
-    if raw_path is not None:
-        return Path(raw_path) if raw_path else None
-    return next(
-        (path for path in DEFAULT_MODEL_FILES if path.exists()),
-        DEFAULT_MODEL_FILES[0],
-    )
+    if raw_path:
+        configured_path = Path(raw_path).expanduser()
+        if not any(_same_path(configured_path, option.path) for option in options):
+            options.insert(
+                0,
+                ModelOption("configured", configured_path.stem, configured_path),
+            )
+    if not options and LEGACY_MODEL.path.exists():
+        options.append(LEGACY_MODEL)
+    return options
+
+
+def _default_model_option() -> ModelOption:
+    """Resolve the configured/default model from the server whitelist."""
+
+    options = _available_model_options()
+    if not options:
+        # Preserve a useful error path when checkpoints have not been downloaded.
+        return BUILT_IN_MODELS[0]
+    raw_path = _environment_value("MMPOSE_MODEL_FILE", "MMYOGA_MODEL_FILE")
+    if raw_path:
+        configured_path = Path(raw_path).expanduser()
+        for option in options:
+            if _same_path(configured_path, option.path):
+                return option
+    return options[0]
+
+
+def _selected_model(raw_id: str | None = None) -> ModelOption:
+    """Resolve a requested model ID without accepting arbitrary file paths."""
+
+    if not raw_id:
+        return _default_model_option()
+    options = {option.id: option for option in _available_model_options()}
+    try:
+        return options[raw_id]
+    except KeyError as exc:
+        raise ValueError(f"Unknown or unavailable model: {raw_id}") from exc
+
+
+def _model_path() -> Path:
+    """Return the default checkpoint path for health and compatibility output."""
+
+    return _default_model_option().path
+
+
+@lru_cache(maxsize=4)
+def _cached_predictor(path: str):
+    """Load each selectable checkpoint once instead of on every connection."""
+
+    return load_predictor(Path(path))
 
 
 def _replay_path() -> Path:
@@ -161,11 +226,13 @@ def _mock_latest() -> dict[str, object]:
 @app.get("/health")
 def health() -> dict[str, object]:
     replay_path = _replay_path()
+    default_model = _default_model_option()
     return {
         "status": "ok",
         "replay_file": str(replay_path),
         "replay_available": replay_path.exists(),
-        "model_file": str(_model_path()) if _model_path() else None,
+        "model_id": default_model.id,
+        "model_file": str(default_model.path),
         "live": live_radar.status(),
     }
 
@@ -175,6 +242,8 @@ def sources() -> dict[str, object]:
     replay_files = _available_replay_files()
     default_path = _replay_path()
     live_status = live_radar.status()
+    model_options = _available_model_options()
+    default_model = _default_model_option()
     return {
         "default_source": "replay" if default_path.exists() else "mock",
         "default_replay_file": str(default_path),
@@ -195,6 +264,15 @@ def sources() -> dict[str, object]:
                 "selected": path == default_path,
             }
             for path in replay_files
+        ],
+        "default_model": default_model.id,
+        "models": [
+            {
+                "id": option.id,
+                "label": option.label,
+                "selected": option.id == default_model.id,
+            }
+            for option in model_options
         ],
     }
 
@@ -221,23 +299,40 @@ async def upload_replay_file(request: Request, filename: str | None = None) -> d
 
 
 @app.get("/api/latest")
-def latest(source: str = "auto", replay_file: str | None = None) -> dict[str, object]:
+def latest(
+    source: str = "auto",
+    replay_file: str | None = None,
+    model: str | None = None,
+) -> dict[str, object]:
     mode = _source_mode(source)
     if mode == "mock":
         return _mock_latest()
     if mode == "live":
+        try:
+            model_option = _selected_model(model)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         message = live_radar.latest_message
-        if message is not None:
+        if message is not None and message.get("model_id") == model_option.id:
             return message
         raise HTTPException(
             status_code=503,
             detail={"message": "No live radar frame is available yet", **live_radar.status()},
         )
 
-    predictor = load_predictor(_model_path())
+    try:
+        model_option = _selected_model(model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    predictor = _cached_predictor(str(model_option.path))
     replay_path = _selected_replay_path(replay_file)
     if replay_path.exists():
-        for message in iter_replay_messages(replay_path, predictor=predictor, max_frames=1):
+        for message in iter_replay_messages(
+            replay_path,
+            predictor=predictor,
+            model_id=model_option.id,
+            max_frames=1,
+        ):
             return message
     # Keep the REST endpoint usable on machines that do not have replay data.
     return _mock_latest()
@@ -253,21 +348,25 @@ async def predictions(websocket: WebSocket) -> None:
             async for message in async_mock_messages():
                 await websocket.send_json(message)
         elif mode == "live":
-            predictor = load_predictor(_model_path())
+            model_option = _selected_model(websocket.query_params.get("model"))
+            predictor = _cached_predictor(str(model_option.path))
             live_radar.start(
                 loop=asyncio.get_running_loop(),
+                model_id=model_option.id,
                 predictor=predictor,
             )
             async for message in live_radar.messages():
                 await websocket.send_json(message)
         elif replay_path.exists():
-            predictor = load_predictor(_model_path())
+            model_option = _selected_model(websocket.query_params.get("model"))
+            predictor = _cached_predictor(str(model_option.path))
             # Re-open the finite replay file after it reaches EOF so a dashboard
             # can stay connected during demos.
             while True:
                 async for message in async_replay_messages(
                     replay_path,
                     predictor=predictor,
+                    model_id=model_option.id,
                     playback_speed=float(
                         _environment_value(
                             "MMPOSE_PLAYBACK_SPEED",
@@ -283,6 +382,17 @@ async def predictions(websocket: WebSocket) -> None:
             # Development fallback when the recording is not present locally.
             async for message in async_mock_messages():
                 await websocket.send_json(message)
+    except ValueError as exc:
+        try:
+            await websocket.close(code=1008, reason=str(exc)[:120])
+        except RuntimeError:
+            pass
+    except FileNotFoundError as exc:
+        logger.error("Model checkpoint unavailable: %s", exc)
+        try:
+            await websocket.close(code=1011, reason=str(exc)[:120])
+        except RuntimeError:
+            pass
     except LiveRadarUnavailable as exc:
         logger.warning("Live Radar unavailable: %s", exc)
         try:

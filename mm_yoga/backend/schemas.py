@@ -33,6 +33,7 @@ class PredictionMessage:
 
     timestamp_ms: float
     source: str
+    model_id: str
     prediction: PredictionPayload
     points: list[dict[str, float]]
     point_sets: Optional[dict[str, list[dict[str, float]]]]
