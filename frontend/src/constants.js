@@ -13,11 +13,14 @@ function referencePoseAsset(filename) {
   return `${REFERENCE_POSE_ROOT}/${filename}?v=${REFERENCE_POSE_VERSION}`;
 }
 
-export function buildPredictionWsUrl({ source, replayFile }) {
+export function buildPredictionWsUrl({ source, replayFile, model }) {
   const url = new URL(WS_URL);
   url.searchParams.set("source", source || "auto");
   if (replayFile) {
     url.searchParams.set("replay_file", replayFile);
+  }
+  if (source !== "mock" && model) {
+    url.searchParams.set("model", model);
   }
   return url.toString();
 }

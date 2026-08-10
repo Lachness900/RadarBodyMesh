@@ -10,12 +10,15 @@ import { usePredictionStream } from "./hooks/usePredictionStream";
 export default function App() {
   const [sourceOptions, setSourceOptions] = useState({
     default_source: "mock",
+    default_model: "",
+    models: [],
     replay_files: [],
     loaded: false,
   });
   const [sourceSelection, setSourceSelection] = useState({
     source: "mock",
     replayFile: "",
+    model: "",
   });
   const { error: streamError, message, status } = usePredictionStream(sourceSelection);
   const [pointMode, setPointMode] = useState("projected_radar");
@@ -51,12 +54,15 @@ export default function App() {
           data.replay_files?.find((file) => file.selected)?.path ||
           data.replay_files?.[0]?.path ||
           "";
+        const model = data.default_model || data.models?.[0]?.id || "";
         setSourceOptions({ ...data, loaded: true });
         setSourceSelection((current) => {
-          if (current.source !== "mock" || current.replayFile) return current;
+          const isInitialSelection = current.source === "mock" && !current.replayFile;
           return {
-            source: data.default_source || "mock",
-            replayFile,
+            ...current,
+            source: isInitialSelection ? data.default_source || "mock" : current.source,
+            replayFile: isInitialSelection ? replayFile : current.replayFile,
+            model: current.model || model,
           };
         });
       })
@@ -67,7 +73,11 @@ export default function App() {
           loaded: true,
           error: "Could not load input-source status from the backend.",
         }));
-        setSourceSelection({ source: "mock", replayFile: "" });
+        setSourceSelection((current) => ({
+          ...current,
+          source: "mock",
+          replayFile: "",
+        }));
       });
     return () => {
       isActive = false;
@@ -110,6 +120,7 @@ export default function App() {
 
       <StatusStrip
         message={message}
+        models={sourceOptions.models}
         pointCount={pointView.points.length}
         selection={sourceSelection}
         status={status}

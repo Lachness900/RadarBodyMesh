@@ -466,21 +466,24 @@ h1 {
   color: #b43b24;
 }
 
-.replay-file-control {
+.replay-file-control,
+.model-control {
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.replay-file-control span {
+.replay-file-control span,
+.model-control span {
   color: #5f6e6f;
   font-size: 0.68rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.replay-file-control select {
+.replay-file-control select,
+.model-control select {
   width: min(360px, 42vw);
   min-width: 180px;
   border: 1px solid rgba(34, 40, 56, 0.14);
@@ -493,6 +496,11 @@ h1 {
   min-height: 30px;
   outline: 0;
   padding: 0 10px;
+}
+
+.model-control select {
+  width: 150px;
+  min-width: 140px;
 }
 
 .upload-button input {
@@ -544,8 +552,13 @@ h1 {
   }
 
   .replay-file-control,
-  .replay-file-control select {
+  .replay-file-control select,
+  .model-control {
     width: 100%;
+  }
+
+  .model-control select {
+    flex: 1;
   }
 
   .topbar {

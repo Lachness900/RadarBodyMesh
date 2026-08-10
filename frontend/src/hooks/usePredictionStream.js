@@ -21,10 +21,11 @@ export function usePredictionStream(sourceSelection) {
     let terminalError = "";
     let latestMessage = null;
     const selectedSource = sourceSelection.source || "mock";
+    const selectedModel = sourceSelection.model || "";
     setError("");
 
     if (selectedSource !== "mock") {
-      setMessage(makeWaitingMessage(selectedSource));
+      setMessage(makeWaitingMessage(selectedSource, selectedModel));
       setStatus("connecting");
     }
 
@@ -90,7 +91,15 @@ export function usePredictionStream(sourceSelection) {
         }
         if (nextMessage.source !== selectedSource) {
           terminalError = `Expected ${selectedSource} data, but received ${nextMessage.source || "an unknown source"}.`;
-          setMessage(makeWaitingMessage(selectedSource));
+          setMessage(makeWaitingMessage(selectedSource, selectedModel));
+          setStatus(selectedSource === "live" ? "unavailable" : "disconnected");
+          setError(terminalError);
+          websocket.close();
+          return;
+        }
+        if (selectedSource !== "mock" && nextMessage.model_id !== selectedModel) {
+          terminalError = `Expected model ${selectedModel}, but received ${nextMessage.model_id || "an unknown model"}.`;
+          setMessage(makeWaitingMessage(selectedSource, selectedModel));
           setStatus(selectedSource === "live" ? "unavailable" : "disconnected");
           setError(terminalError);
           websocket.close();
@@ -130,7 +139,7 @@ export function usePredictionStream(sourceSelection) {
       if (websocket) websocket.close();
       if (mockTimer) window.clearInterval(mockTimer);
     };
-  }, [sourceSelection.replayFile, sourceSelection.source]);
+  }, [sourceSelection.model, sourceSelection.replayFile, sourceSelection.source]);
 
   return { error, message, status };
 }

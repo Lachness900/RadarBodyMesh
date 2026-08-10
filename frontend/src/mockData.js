@@ -34,6 +34,7 @@ export function makeMockMessage(tick) {
   return {
     timestamp_ms: tick * 100,
     source: "mock",
+    model_id: "mock",
     prediction: {
       label: best.key,
       confidence: probabilities[best.key],
@@ -53,10 +54,11 @@ export function makeMockMessage(tick) {
 }
 
 /** Empty source-specific state shown while Replay or Live waits for real data. */
-export function makeWaitingMessage(source) {
+export function makeWaitingMessage(source, modelId = "") {
   return {
     timestamp_ms: 0,
     source,
+    model_id: modelId,
     prediction: {
       label: "",
       confidence: 0,

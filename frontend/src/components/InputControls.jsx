@@ -9,7 +9,9 @@ export function InputControls({
   streamStatus,
 }) {
   const replayFiles = options.replay_files || [];
+  const models = options.models || [];
   const hasReplayFiles = replayFiles.length > 0;
+  const hasModels = models.length > 0;
   const liveOption = options.sources?.find((option) => option.id === "live");
   const liveStatusMessage = (() => {
     if (selection.source !== "live") return "";
@@ -32,13 +34,19 @@ export function InputControls({
 
   const setInput = (source) => {
     onChange((current) => ({
+      ...current,
       source,
-      replayFile: source === "replay" ? current.replayFile || replayFiles[0]?.path || "" : "",
+      replayFile: current.replayFile || replayFiles[0]?.path || "",
+      model: current.model || options.default_model || models[0]?.id || "",
     }));
   };
 
   const setReplayFile = (replayFile) => {
     onChange((current) => ({ ...current, source: "replay", replayFile }));
+  };
+
+  const setModel = (model) => {
+    onChange((current) => ({ ...current, model }));
   };
 
   const uploadReplayFile = async (file) => {
@@ -63,7 +71,11 @@ export function InputControls({
         })),
       };
     });
-    onChange({ source: "replay", replayFile: uploaded.path });
+    onChange((current) => ({
+      ...current,
+      source: "replay",
+      replayFile: uploaded.path,
+    }));
   };
 
   return (
@@ -93,6 +105,27 @@ export function InputControls({
           Live Radar
         </button>
       </div>
+
+      {selection.source !== "mock" && (
+        <label className="model-control">
+          <span>Model</span>
+          <select
+            disabled={!hasModels}
+            value={selection.model}
+            onChange={(event) => setModel(event.target.value)}
+          >
+            {hasModels ? (
+              models.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label}
+                </option>
+              ))
+            ) : (
+              <option value="">No model available</option>
+            )}
+          </select>
+        </label>
+      )}
 
       {liveStatusMessage && (
         <span
