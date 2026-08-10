@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfidenceBars } from "./components/ConfidenceBars";
 import { InputControls } from "./components/InputControls";
 import { PredictionPanel } from "./components/PredictionPanel";
@@ -19,8 +19,27 @@ export default function App() {
     source: "mock",
     replayFile: "",
     model: "",
+    replayModel: "",
+    liveModel: "",
   });
-  const { error: streamError, message, status } = usePredictionStream(sourceSelection);
+  const syncLiveModel = useCallback((model) => {
+    if (!model) return;
+    setSourceSelection((current) => {
+      if (
+        current.liveModel === model &&
+        (current.source !== "live" || current.model === model)
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        liveModel: model,
+        model: current.source === "live" ? model : current.model,
+      };
+    });
+  }, []);
+  const { error: streamError, message, status } =
+    usePredictionStream(sourceSelection);
   const [pointMode, setPointMode] = useState("projected_radar");
   const updatedAt = useMemo(() => {
     const timestamp = message?.timestamp_ms || 0;
@@ -55,14 +74,29 @@ export default function App() {
           data.replay_files?.[0]?.path ||
           "";
         const model = data.default_model || data.models?.[0]?.id || "";
+        const activeLiveModel =
+          data.sources?.find((source) => source.id === "live")?.status?.model_id ||
+          model;
         setSourceOptions({ ...data, loaded: true });
         setSourceSelection((current) => {
           const isInitialSelection = current.source === "mock" && !current.replayFile;
+          const source = isInitialSelection
+            ? data.default_source || "mock"
+            : current.source;
+          const replayModel = current.replayModel || model;
+          const liveModel = current.liveModel || activeLiveModel;
           return {
             ...current,
-            source: isInitialSelection ? data.default_source || "mock" : current.source,
+            source,
             replayFile: isInitialSelection ? replayFile : current.replayFile,
-            model: current.model || model,
+            replayModel,
+            liveModel,
+            model:
+              source === "live"
+                ? liveModel
+                : source === "replay"
+                  ? replayModel
+                  : current.model || model,
           };
         });
       })
@@ -83,6 +117,42 @@ export default function App() {
       isActive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (sourceSelection.source !== "live") return undefined;
+    let isActive = true;
+
+    const refreshLiveModel = () => {
+      fetch(`${API_URL}/api/sources`, { cache: "no-store" })
+        .then((response) => {
+          if (!response.ok) throw new Error("Could not refresh Live Radar status.");
+          return response.json();
+        })
+        .then((data) => {
+          if (!isActive) return;
+          setSourceOptions((current) => ({
+            ...current,
+            ...data,
+            loaded: true,
+          }));
+          const model = data.sources?.find(
+            (source) => source.id === "live",
+          )?.status?.model_id;
+          syncLiveModel(model);
+        })
+        .catch(() => {
+          // The WebSocket owns connection errors; this lightweight poll only
+          // keeps the shared model selector synchronized between dashboards.
+        });
+    };
+
+    refreshLiveModel();
+    const timer = window.setInterval(refreshLiveModel, 1500);
+    return () => {
+      isActive = false;
+      window.clearInterval(timer);
+    };
+  }, [sourceSelection.source, syncLiveModel]);
 
   return (
     <main className="app-shell">

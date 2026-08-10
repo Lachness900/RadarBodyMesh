@@ -97,7 +97,21 @@ export function usePredictionStream(sourceSelection) {
           websocket.close();
           return;
         }
-        if (selectedSource !== "mock" && nextMessage.model_id !== selectedModel) {
+        if (
+          selectedSource === "live" &&
+          nextMessage.model_id &&
+          nextMessage.model_id !== selectedModel
+        ) {
+          // A model switch can leave one old frame in this client's queue.
+          // Ignore mismatches; App polls the authoritative global Live model
+          // and reconnects every dashboard with the synchronized selection.
+          latestMessage = null;
+          setStatus("waiting");
+          return;
+        } else if (
+          selectedSource !== "mock" &&
+          nextMessage.model_id !== selectedModel
+        ) {
           terminalError = `Expected model ${selectedModel}, but received ${nextMessage.model_id || "an unknown model"}.`;
           setMessage(makeWaitingMessage(selectedSource, selectedModel));
           setStatus(selectedSource === "live" ? "unavailable" : "disconnected");
@@ -139,7 +153,11 @@ export function usePredictionStream(sourceSelection) {
       if (websocket) websocket.close();
       if (mockTimer) window.clearInterval(mockTimer);
     };
-  }, [sourceSelection.model, sourceSelection.replayFile, sourceSelection.source]);
+  }, [
+    sourceSelection.model,
+    sourceSelection.replayFile,
+    sourceSelection.source,
+  ]);
 
   return { error, message, status };
 }

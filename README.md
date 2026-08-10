@@ -152,6 +152,7 @@ GET  /health
 GET  /api/sources
 GET  /api/latest?source=replay
 POST /api/replay-files?filename=<name>.dat
+POST /api/live-model?model=pointcloud_240
 WS   /ws/predictions?source=replay&replay_file=<path>&model=pointcloud_240
 WS   /ws/predictions?source=live&model=pointcloud_240
 ```
@@ -176,11 +177,13 @@ MMPOSE_RADAR_TIMEOUT=5.0
 MMPOSE_PREDICTION_INTERVAL_MS=0
 ```
 
-The dashboard can switch between the tracked 120- and 240-epoch checkpoints in
-Replay or Live mode. Switching opens a new WebSocket; Replay restarts from the
-beginning, while Live clears points accumulated for the previous model. The
-backend accepts only model IDs returned by `GET /api/sources`, never arbitrary
-checkpoint paths supplied by the browser.
+The dashboard can switch between the tracked 120- and 240-epoch checkpoints.
+Each Replay page keeps its own model selection and restarts that replay when it
+changes. Live Radar uses one backend-wide model because all pages share the same
+UDP stream and inference result. Changing it on one dashboard clears the old
+point accumulation and automatically synchronizes other connected dashboards.
+The backend accepts only model IDs returned by `GET /api/sources`, never
+arbitrary checkpoint paths supplied by the browser.
 
 The backend uses `pointcloud_classifier240.pt` by default, then falls back to
 the 120-epoch candidate or the legacy `pose_classifier.pt` when the preferred
